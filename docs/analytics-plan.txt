@@ -1,0 +1,107 @@
+Munar Analytics & Reporting - Implementation Plan (Draft)
+
+Goal
+- Build a full analytics experience for the Event Creator plan that matches existing design patterns, uses mock-first services, and is backend-ready.
+
+Scope
+- Event Dashboard Analytics module with multiple sub-sections/tabs.
+- KPI overview and deep-dive analytics sections.
+- Export/reporting UI and scheduled reports placeholders.
+- Event-scoped comparison (no global all-events view).
+- Alerts/notifications surfaces (in-app + email settings).
+- Data privacy/consent controls (UI & configuration).
+
+Architecture Alignment
+- Pages live in src/pages and receive onNavigate.
+- Feature components in src/components/event-dashboard/analytics/.
+- Data access via src/services/analytics.service.ts with mock/real toggle.
+- Hooks in src/hooks/useAnalytics.ts and related sub-hooks.
+- Types in src/types/analytics.ts.
+- Mock data in src/services/mock/data.ts.
+
+Navigation + Entry Points
+- Event Dashboard -> Analytics tab/page.
+- Integrate with ModulesHub if required.
+
+Core Sections (Tabs)
+1) Overview
+2) Ticket Sales
+3) Attendance & Check-Ins
+4) Engagement & Interaction
+5) Financial Performance
+6) Campaign Attribution
+7) Content & Session Metrics
+8) Leads & Networking
+9) Export & Custom Reports
+10) Multi-Event Comparison (global)
+
+Data Model (Draft)
+- KPI aggregates (tickets sold, revenue, check-ins, NPS, engagement score, revenue/attendee)
+- Time series (daily/weekly/monthly)
+- Breakdowns (by ticket type, channel, session, campaign)
+- Funnel metrics (visitors -> checkout -> purchase)
+- Attendance metrics (per session, per tier)
+- Engagement metrics (polls, chat, Q&A, bookmarks)
+- Financial metrics (revenue streams, costs, ROI)
+- Campaign attribution (UTM, source, conversion, revenue)
+- Content metrics (views, watch time, downloads)
+- Networking metrics (leads, meetings, messages)
+- Export/report config (format, schedule, recipients, filters)
+
+UI/UX Patterns
+- KPI cards with optional sparklines.
+- Charts: line, bar, funnel, heatmap.
+- Interactive filters: date range (default 7 days), ticket type, location, channel.
+- Drill-down links from summary to detail sections.
+- Alerts panel for low stock, sellout spikes, engagement dips.
+
+Phases
+Phase 1: Foundations
+- Types, services, mock data, hooks.
+- Analytics shell page and tab routing.
+- Filters bar (date range + multi-select).
+
+Phase 2: Overview + Ticket Sales
+- KPI cards and sales trend charts.
+- Ticket revenue breakdown and funnel.
+
+Phase 3: Attendance + Engagement
+- Check-in trends, no-show stats, session heatmap.
+- Engagement KPIs and interaction charts.
+
+Phase 4: Financial + Campaigns + Content
+- Revenue streams + ROI cards.
+- Attribution tables and campaign charts.
+- Content performance metrics.
+
+Phase 5: Networking + Reports + Event Comparison
+- Networking analytics.
+- Export/report builder UI + scheduling UI.
+- Event-scoped comparison views.
+
+Phase 6: Alerts + Privacy
+- Alerts list and configuration UI.
+- Consent + data minimization controls placeholders.
+
+Decisions Confirmed
+- Charting library: Recharts (already installed).
+- Data source: mock-first, API-ready service layer.
+- Default date range: last 7 days.
+- KPI formulas: use best-judgment defaults, document in code.
+- Exports: CSV + PDF; scheduled email delivery supported.
+- Multi-event comparison: event-only (no global view).
+- Alerts delivery: in-app + email.
+
+Implementation Checklist (to be tracked)
+- Analytics types created
+- Mock data created
+- Analytics service created
+- Analytics hooks created
+- Analytics pages created
+- Tabs/sections wired
+- Filters applied across sections
+- Export/report UI implemented
+- Event comparison implemented
+- Alerts UI implemented
+- Privacy/consent UI implemented
+- Navigation updated
