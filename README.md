@@ -1,224 +1,210 @@
+# Munar Frontend
 
-# Munar Event Management Platform
+Munar is a modular event operating system for organisers. This frontend powers both the organiser dashboard and the public event experience, covering authentication, tenant-aware event management, and attendee-facing modules like tickets, forms, merchandise, voting, gallery, DP maker, sponsors, analytics, and event websites.
 
-A **modular event management system** with React frontend + Express.js backend. Features include ticketing, voting, merchandise, forms, sponsorships, and a website builder.
+Built with React, TypeScript, Vite, and React Router, the app is structured around reusable modules and service layers that can run against mock data or a live backend API.
 
-**Status**: Frontend with mock data ready; backend integration available
+## What This App Does
 
-## Quick Start
+- Authenticates users with email verification, password reset, and tenant-aware access control
+- Lets organisers create and manage events from a central dashboard
+- Provides event modules for tickets, forms, merchandise, voting, sponsors, gallery, DP maker, website builder, and analytics
+- Exposes public event routes for attendee-facing experiences under event slugs
+- Connects to a backend API with token refresh support and configurable feature flags
 
-### Frontend
-```bash
-npm install          # Install dependencies
-npm run dev          # Start dev server → http://localhost:5173
-npm run build        # Build for production
-```
+## Core Product Areas
 
-Frontend uses **React 18 + TypeScript + Vite + React Router v7 + Tailwind CSS v4 + Radix UI**.
+### Organiser Experience
 
-### Backend (Optional)
-```bash
-cd backend
-npm install
-npm run dev          # Start API → http://localhost:3000
+- Sign up, login, verify email, reset/change password
+- Select account type and complete profile setup
+- Create and manage events
+- Access per-event admin workspaces:
+  - Dashboard overview
+  - Ticket management
+  - Program management
+  - Form management
+  - Merchandise management
+  - Voting management
+  - Sponsors management
+  - Gallery admin
+  - DP maker admin
+  - Event analytics
+  - Website builder
 
-# Database setup
-npm run db:push      # Push schema to Neon DB
-npm run db:studio    # Browse DB visually
-```
+### Public Event Experience
 
-Backend uses **Express.js + Neon DB (PostgreSQL) + Drizzle ORM + JWT auth**.
+Public event pages are served under `/e/:eventSlug` and support:
 
-## Architecture
+- Event website landing page
+- Ticket purchase flows
+- Public voting
+- Merchandise storefront
+- Public forms and form submission
+- Gallery
+- DP maker
 
-### 4-Layer Component Hierarchy
-```
-AppShell (theme, auth, global state)
-  └─ EventResolver (load event from URL)
-    └─ BrandProvider (inject event branding)
-      └─ Module (feature-specific component: tickets, voting, merch, etc.)
-```
+Module access is guarded per event, so only enabled modules appear publicly.
 
-### Routing with React Router v7
-- **Admin routes**: `/login`, `/events`, `/events/:eventId/...`
-- **Public routes**: `/e/:eventSlug`, `/e/:eventSlug/tickets`, etc.
-- **Module guarding**: Disabled modules show 404 with optional redirect to event website
+## Tech Stack
 
-### Module System
-10 independent modules that can be enabled/disabled per event:
-- **Core**: Website, Tickets, Program, Analytics
-- **Growth**: Voting, Merchandise, DP Maker
-- **Operations**: Forms, Gallery, Sponsors
-
-Each module has:
-- Public page (attendee-facing)
-- Admin dashboard (organizer-facing)
-- Service layer with mock + real API support
-- Independent hook for state management
-
-See [VOTING_MODULE_SPEC.md](./VOTING_MODULE_SPEC.md) for detailed module example.
-
-## Configuration
-
-### Frontend Environment (`.env`)
-```bash
-VITE_API_BASE_URL=http://localhost:3000/api  # Backend URL
-VITE_USE_MOCK_DATA=true                      # Use mock data (no backend needed)
-VITE_API_TIMEOUT=30000                       # Request timeout in ms
-```
-
-### Backend Environment (`backend/.env`)
-```bash
-DATABASE_URL=postgresql://...  # Neon DB connection string
-JWT_ACCESS_SECRET=...          # Generate: openssl rand -hex 64
-JWT_REFRESH_SECRET=...         # Generate: openssl rand -hex 64
-CORS_ORIGINS=http://localhost:5173,https://yourdomain.com
-```
-
-## API Endpoints
-
-### Authentication
-| Method | Path | Auth |
-|--------|------|------|
-| POST | `/api/auth/signup` | – |
-| POST | `/api/auth/login` | – |
-| POST | `/api/auth/forgot-password` | – |
-| GET | `/api/auth/me` | ✓ |
-| PATCH | `/api/auth/profile` | ✓ |
-
-### Events
-| Method | Path | Auth |
-|--------|------|------|
-| GET | `/api/events` | ✓ |
-| POST | `/api/events` | ✓ |
-| GET | `/api/events/:id` | ✓ |
-| PATCH | `/api/events/:id` | ✓ |
-| GET | `/api/events/slug/:slug` | – |
-
-### Per-Event Modules
-All nested under `/api/events/:eventId/`:
-- `/tickets` - CRUD + attendees + check-in
-- `/program/speakers`, `/program/sessions` - Schedule management
-- `/forms/:id/responses` - Custom forms + submissions
-- `/voting/campaigns` - Campaigns, rounds, voting
-- `/merchandise/products`, `/merchandise/orders` - Merch store
-- `/sponsors` - Sponsor management
-- `/website` - Website config
+- React 18
+- TypeScript
+- Vite
+- React Router
+- Radix UI primitives
+- TipTap editor
+- Recharts
+- Sonner
+- Lucide icons
 
 ## Project Structure
 
-```
-├── src/
-│   ├── pages/               # Full pages (auth, dashboard, admin)
-│   ├── components/
-│   │   ├── ui/              # Radix-based primitives
-│   │   ├── AppShell.tsx     # App wrapper
-│   │   ├── EventResolver.tsx # Event data loader
-│   │   └── ModuleGuard.tsx  # Module access control
-│   ├── modules/             # Feature modules (tickets, voting, merch, etc.)
-│   ├── contexts/            # Global state (Auth, Event, Brand, Voting, Merchandise)
-│   ├── hooks/               # Data hooks (useEvents, useTickets, etc.)
-│   ├── services/            # API + mock service layer
-│   ├── lib/                 # api-client, navigation, event-storage
-│   ├── types/               # Global types + module system
-│   ├── config/              # Environment config
-│   └── styles/              # Global CSS + Tailwind variables
-├── backend/                 # Express.js API server
-│   ├── src/
-│   │   ├── app.ts           # Express app setup
-│   │   ├── server.ts        # Server entry point
-│   │   ├── routes/          # API endpoints
-│   │   ├── controllers/     # Business logic
-│   │   ├── db/              # Drizzle schema + migrations
-│   │   └── middleware/      # Auth, validation, error handling
-│   ├── drizzle.config.ts    # ORM config
-│   └── package.json
-├── docs/                    # Documentation
-├── VOTING_MODULE_SPEC.md    # Canonical module implementation guide
-└── package.json
+```txt
+src/
+  components/         Shared UI and feature components
+  contexts/           Auth, event, brand, voting, and merchandise state
+  hooks/              Feature-specific hooks
+  lib/                API client, navigation, local storage helpers
+  modules/            Public-facing modules (tickets, forms, merch, voting, website, etc.)
+  pages/              Route-level organiser and auth pages
+  router/             Application route definitions
+  services/           API service layer for backend communication
+  types/              Shared TypeScript types
 ```
 
-## Development Workflow
+## Routing Overview
 
-### Adding a New Module
-1. Define `ModuleType` in [src/types/modules.ts](src/types/modules.ts)
-2. Add to `MODULE_REGISTRY` with metadata
-3. Create `src/modules/my-module/` folder with:
-   - `MyModulePublic.tsx` - Public page
-   - `types.ts` - Module types
-   - `hooks.ts` - Custom hooks
-   - `components/` - UI components
-4. Add admin page in `src/pages/MyModuleManagement.tsx`
-5. Create service in `src/services/my-module.service.ts` with mock + API support
-6. Add routes to [src/router/index.tsx](src/router/index.tsx)
-7. Apply dark mode styling throughout
+### Auth Routes
 
-See [VOTING_MODULE_SPEC.md](./VOTING_MODULE_SPEC.md) for a complete step-by-step example.
+- `/login`
+- `/signup`
+- `/verify-email`
+- `/forgot-password`
+- `/reset-password`
+- `/change-password`
+- `/account-type`
+- `/profile-setup`
 
-### Mock-First Development
-All services check `config.features.useMockData` and automatically handle:
-- Mock data in development (`VITE_USE_MOCK_DATA=true`)
-- Real API when connected (`VITE_USE_MOCK_DATA=false`)
-- No code changes needed - just flip the env var
+### Platform Routes
 
-Mock data files: `src/services/mock/*-data.ts`
+- `/events`
+- `/events/create`
 
-### Styling
-- **Framework**: Tailwind CSS v4 with CSS variables
-- **Components**: Radix UI primitives wrapped in `src/components/ui/`
-- **Font**: Raleway on containers
-- **Dark mode**: Always pair light/dark classes; see [.github/copilot-instructions.md](./.github/copilot-instructions.md#dark-mode-critical---always-pair-lightdark-classes)
+### Event Admin Routes
 
-### Navigation
-- **Router**: React Router v7 with `useNavigate()` hook
-- **Legacy support**: Some components still use `onNavigate` prop via `useAppNavigate()` bridge
-- **Routes**: Defined in [src/router/index.tsx](src/router/index.tsx)
+- `/events/:eventId`
+- `/events/:eventId/tickets`
+- `/events/:eventId/program`
+- `/events/:eventId/forms`
+- `/events/:eventId/merchandise`
+- `/events/:eventId/voting`
+- `/events/:eventId/sponsors`
+- `/events/:eventId/dp-maker`
+- `/events/:eventId/gallery`
+- `/events/:eventId/analytics`
+- `/events/:eventId/website`
 
-## Troubleshooting
+### Public Routes
 
-### Frontend won't load
-- Check Node version: `node -v` (requires 18+)
-- Clear `node_modules`: `rm -r node_modules && npm install`
-- Check port 5173 is available
+- `/e/:eventSlug`
+- `/e/:eventSlug/tickets`
+- `/e/:eventSlug/voting`
+- `/e/:eventSlug/merch`
+- `/e/:eventSlug/forms`
+- `/e/:eventSlug/forms/:formId`
+- `/e/:eventSlug/dp-maker`
+- `/e/:eventSlug/gallery`
 
-### Backend connection failing
-- Is backend running? Check `http://localhost:3000/api/health`
-- Is `VITE_USE_MOCK_DATA=false`?
-- Check CORS_ORIGINS in `backend/.env`
-- Verify JWT secrets match between frontend and backend
+## Getting Started
 
-### Tokens keep expiring
-- JWT tokens are stored in localStorage (`munar_auth_token`, `munar_refresh_token`)
-- Refresh token flow is automatic via api-client.ts
-- If stuck in 401 loop, clear localStorage and log in again
+### Prerequisites
 
-### Dark mode not working
-- Isn't applied? Check that light and dark classes are paired (e.g., `bg-white dark:bg-slate-900`)
-- Theme stored in localStorage: `vite-ui-theme`
-- Access theme with `useTheme()` hook from [src/components/theme-provider.tsx](src/components/theme-provider.tsx)
+- Node.js 18+ recommended
+- npm
+- A running Munar backend API
 
-## Contributing
+### Installation
 
-Follow the patterns established in this codebase:
+```bash
+npm install
+```
 
-1. **Services**: Always support both mock and real API
-2. **Hooks**: Return `{ data, isLoading, error, ...mutations }`
-3. **Components**: Use dark mode pairs, Radix primitives, cn() utility
-4. **Types**: Extend existing types rather than duplicating
-5. **Routing**: Use React Router `useNavigate()`
-6. **Modules**: Follow [VOTING_MODULE_SPEC.md](./VOTING_MODULE_SPEC.md) structure
+### Run Locally
 
-See [.github/copilot-instructions.md](./.github/copilot-instructions.md) for detailed AI coding guidelines.
+```bash
+npm run dev
+```
 
-## Resources
+The app uses Vite for local development.
 
-- **Figma Design**: [Event Management Platform UI](https://www.figma.com/design/TM9cwp5R3xfovh1VLvreHy/Event-Management-Platform-UI)
-- **Backend Docs**: [backend/README.md](./backend/README.md)
-- **Module Specs**: [VOTING_MODULE_SPEC.md](./VOTING_MODULE_SPEC.md)
-- **AI Coding Guide**: [.github/copilot-instructions.md](./.github/copilot-instructions.md)
+### Production Build
 
-## License
+```bash
+npm run build
+```
 
-MIT
-# munar-admin
-# munar-admin
+### Preview Production Build
+
+```bash
+npm run preview
+```
+
+## Environment Variables
+
+Create or update `.env` with values like:
+
+```env
+VITE_API_BASE_URL=http://localhost:8000/api
+VITE_API_TIMEOUT=30000
+VITE_USE_MOCK_DATA=false
+VITE_ENABLE_ANALYTICS=false
+```
+
+### Variable Reference
+
+- `VITE_API_BASE_URL`: Base URL for the backend API
+- `VITE_API_TIMEOUT`: Request timeout in milliseconds
+- `VITE_USE_MOCK_DATA`: Enables mock mode unless explicitly set to `false`
+- `VITE_ENABLE_ANALYTICS`: Enables analytics-specific features when set to `true`
+
+## Backend Expectations
+
+This frontend expects a backend that exposes:
+
+- Auth and tenant endpoints under `/api/auth` and `/api/tenants`
+- Event management endpoints under `/api/events`
+- Token refresh support for authenticated requests
+- Event-module endpoints for tickets, forms, merchandise, voting, sponsors, website, analytics, and finance
+
+The included implementation guides in `Frontend Implementation Guide/` document the intended backend contract for auth, tenants, and event modules.
+
+## API and Auth Notes
+
+- Access tokens and refresh tokens are stored in local storage
+- Protected requests automatically attach the bearer token
+- On `401` responses, the app attempts a token refresh before forcing logout
+- Active tenant state is stored locally and used to scope organiser flows
+
+## Deployment
+
+The repository includes a `vercel.json` file configured to:
+
+- Output the production bundle to `build/`
+- Run `npm run build`
+- Rewrite SPA routes to `index.html`
+- Proxy `/api/*` requests to a serverless handler
+
+Adjust this configuration if your deployment topology changes.
+
+## Notes for Contributors
+
+- Route definitions live in `src/router/index.tsx`
+- Environment configuration lives in `src/config/index.ts`
+- API request handling is centralized in `src/lib/api-client.ts`
+- Public modules are organized under `src/modules`
+- Service integrations live under `src/services`
+
+## Status
+
+This frontend already contains broad product coverage across the Munar event platform. Some areas are still evolving, and the repo includes planning/implementation notes for active modules such as voting, sponsors, analytics, and backend integration.
