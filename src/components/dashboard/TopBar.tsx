@@ -4,7 +4,7 @@ import { HelpIcon, MenuIcon, NotificationIcon, SettingsIcon } from "../icons";
 import { Page } from "../../App";
 import { ModeToggle } from "../ui/mode-toggle";
 import { useAuth } from "../../contexts";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useNotifications } from "../../hooks";
 
 interface TopBarProps {
@@ -15,10 +15,14 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate }) => {
   const { user, logout, currentTenant } = useAuth();
   const { notifications, unreadCount, markRead } = useNotifications();
   const navigate = useNavigate();
+  const location = useLocation();
   const [showDropdown, setShowDropdown] = useState(false);
   const [showNotifications, setShowNotifications] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const notificationsRef = useRef<HTMLDivElement>(null);
+
+  const isFinancePage = location.pathname.startsWith('/finance');
+  const isSettingsPage = location.pathname.startsWith('/settings');
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -71,11 +75,15 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate }) => {
             <span className="font-semibold text-sm">Events</span>
           </div>
           <div
-            onClick={() => navigate("/events")}
-            className="flex items-center gap-2 px-4 py-2 rounded-full cursor-pointer text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+            onClick={() => navigate("/finance")}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full cursor-pointer transition-colors ${
+              isFinancePage
+                ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-slate-100'
+                : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
+            }`}
           >
             <MenuIcon className="size-4" />
-            <span className="font-medium text-sm">Finance</span>
+            <span className={`text-sm ${isFinancePage ? 'font-semibold' : 'font-medium'}`}>Finance</span>
           </div>
         </div>
       </div>
@@ -130,7 +138,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate }) => {
             <button className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 transition-colors rounded-full hover:bg-slate-50 dark:hover:bg-slate-800">
               <HelpIcon className="size-5" />
             </button>
-            <button className="p-2 text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-200 transition-colors rounded-full hover:bg-slate-50 dark:hover:bg-slate-800">
+            <button
+              onClick={() => navigate('/settings')}
+              className={`p-2 transition-colors rounded-full hover:bg-slate-50 dark:hover:bg-slate-800 ${isSettingsPage ? 'text-indigo-600 dark:text-indigo-400' : 'text-slate-400 dark:text-slate-500 hover:text-slate-900 dark:hover:text-slate-200'}`}
+            >
               <SettingsIcon className="size-5" />
             </button>
             

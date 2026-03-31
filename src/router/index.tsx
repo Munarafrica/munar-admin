@@ -34,6 +34,8 @@ import { GalleryAdmin } from '../pages/GalleryAdmin';
 import { SponsorsManagement } from '../pages/SponsorsManagement';
 import { EventAnalytics } from '../pages/EventAnalytics';
 import { WebsiteBuilder } from '../pages/WebsiteBuilder';
+import { FinanceManagement } from '../pages/FinanceManagement';
+import { Settings } from '../pages/Settings';
 
 // Public Module Pages
 import { TicketsPublic } from '../modules/tickets/TicketsPublic';
@@ -94,6 +96,8 @@ export const router = createBrowserRouter([
       { path: '/', element: <Navigate to="/events" replace /> },
       { path: '/events', element: <RequireTenant><WithNav Component={MyEvents} /></RequireTenant> },
       { path: '/events/create', element: <RequireTenant><CreateEventRoute /></RequireTenant> },
+      { path: '/finance', element: <RequireAuth><WithNav Component={FinanceManagement} /></RequireAuth> },
+      { path: '/settings', element: <RequireAuth><WithNav Component={Settings} /></RequireAuth> },
       { path: '/checkout/tickets/callback', element: <RequireAuth><TicketCheckoutCallback /></RequireAuth> },
 
       // ── Event Admin Routes ─────

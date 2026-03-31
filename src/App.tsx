@@ -35,7 +35,8 @@ export type Page =
   | 'sponsors-management'
   | 'event-analytics'
   | 'website-builder'
-  | 'change-password';
+  | 'change-password'
+  | 'settings';
 
 function App() {
   return <RouterProvider router={router} />;

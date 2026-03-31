@@ -31,7 +31,8 @@ export type LegacyPage =
   | 'sponsors-management'
   | 'event-analytics'
   | 'website-builder'
-  | 'change-password';
+  | 'change-password'
+  | 'settings';
 
 /**
  * Maps old page names to new React Router paths.
@@ -55,6 +56,7 @@ function getRoutePath(page: LegacyPage, eventId?: string): string {
     // Platform routes
     'my-events': '/events',
     'create-event': '/events/create',
+    'settings': '/settings',
 
     // Event admin routes
     'event-dashboard': `/events/${eid}`,
