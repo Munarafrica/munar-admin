@@ -13,7 +13,7 @@ interface AuthCardProps {
 
 export const AuthCard = ({ title, subtitle, children, footerLink }: AuthCardProps) => {
   return (
-    <div className="bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm rounded-[16px] p-8 md:p-10 shadow-sm border border-slate-100 dark:border-slate-800 w-full">
+    <div className="bg-white/80 dark:bg-auth-card backdrop-blur-sm rounded-[16px] p-8 md:p-10 shadow-sm border border-slate-100 dark:border-slate-800 w-full">
       <div className="text-center mb-8">
         <h2 className="text-2xl font-bold text-slate-900 dark:text-slate-100 mb-2">{title}</h2>
         <p className="text-[13px] text-slate-500 dark:text-slate-400">{subtitle}</p>
