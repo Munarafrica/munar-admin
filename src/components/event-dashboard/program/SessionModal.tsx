@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '../../ui/button';
 import { Session, Speaker } from '../types';
 import { X, Calendar, Clock, MapPin, Tag, Users, Check, Loader2 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { cn } from '../../ui/utils';
 
 interface SessionModalProps {

@@ -2,13 +2,15 @@
 import { config } from '../config';
 import { apiClient } from '../lib/api-client';
 import { 
+  BackendEventResponse,
   ApiResponse, 
   PaginatedResponse, 
   SearchParams, 
   CreateEventRequest, 
   UpdateEventRequest,
   MutationResponse,
-  UploadResponse
+  UploadResponse,
+  PublishedWebsiteOverviewResponse,
 } from '../types/api';
 import { EventData, Metric, ChecklistItem, Module, Activity } from '../components/event-dashboard/types';
 import { getEventPayload, setEventPayload } from '../lib/event-storage';
@@ -16,9 +18,11 @@ import { delay, mockEvents, generateId } from './mock/data';
 import { ticketsService } from './tickets.service';
 import { formsService } from './forms.service';
 import { programService } from './program.service';
+import { websiteService } from './website.service';
 import * as sponsorsService from './sponsors.service';
 import * as merchandiseService from './merchandise.service';
 import * as votingService from './voting.service';
+import { DEFAULT_SECTIONS, DEFAULT_THEME_HORIZON, DEFAULT_THEME_PULSE, WebsiteConfig } from '../modules/website/types';
 
 const EVENTS_STORAGE_KEY = 'munar_events';
 const PROGRESS_STORAGE_KEY = 'munar_event_progress';
@@ -156,6 +160,80 @@ const getServiceModuleCounts = async (eventId: string): Promise<Record<string, n
   };
 };
 
+const sectionsDifferFromDefaults = (sections: WebsiteConfig['sections']): boolean => {
+  if (sections.length !== DEFAULT_SECTIONS.length) return true;
+
+  return sections.some((section, index) => {
+    const defaultSection = DEFAULT_SECTIONS[index];
+    if (!defaultSection) return true;
+
+    return (
+      section.id !== defaultSection.id ||
+      section.visible !== defaultSection.visible ||
+      section.order !== defaultSection.order ||
+      section.variant !== defaultSection.variant ||
+      !!section.overrides
+    );
+  });
+};
+
+const hasMeaningfulWebsiteConfig = (config: WebsiteConfig): boolean => {
+  const defaultTheme = config.templateId === 'pulse' ? DEFAULT_THEME_PULSE : DEFAULT_THEME_HORIZON;
+  const hasSeo = Boolean(config.seo.title?.trim() || config.seo.description?.trim() || config.seo.socialImage || config.seo.socialImageAsset);
+  const hasBranding = Boolean(config.logoUrl || config.logoAsset);
+  const hasSocialLinks = Boolean(config.socialLinks && Object.values(config.socialLinks).some(Boolean));
+  const hasCustomContent = Boolean(config.customBlocks?.length || config.buildingBlocks?.length);
+  const themeChanged = JSON.stringify(config.theme) !== JSON.stringify(defaultTheme);
+
+  return (
+    config.status === 'published' ||
+    config.templateId !== 'horizon' ||
+    config.accessControl !== 'public' ||
+    config.navbarEnabled === false ||
+    Boolean(config.slug || config.password) ||
+    hasSeo ||
+    hasBranding ||
+    hasSocialLinks ||
+    hasCustomContent ||
+    themeChanged ||
+    sectionsDifferFromDefaults(config.sections)
+  );
+};
+
+const getWebsiteModuleCount = async (eventId: string): Promise<number> => {
+  try {
+    const config = await websiteService.loadConfig(eventId);
+    return hasMeaningfulWebsiteConfig(config) ? 1 : 0;
+  } catch {
+    return websiteService.hasConfig(eventId) ? 1 : 0;
+  }
+};
+
+const reconcileModuleProgress = async (eventId: string, modules: Module[]): Promise<Module[]> => {
+  const [serviceCounts, websiteCount] = await Promise.all([
+    getServiceModuleCounts(eventId).catch(() => ({})),
+    getWebsiteModuleCount(eventId).catch(() => 0),
+  ]);
+
+  const payloadCounts = getEventPayload<Record<string, number>>(eventId, 'module_counts', {});
+  const counts = {
+    ...payloadCounts,
+    ...serviceCounts,
+    'Event Website': websiteCount,
+  };
+
+  return modules.map((module) => {
+    if (module.name === 'Analytics') return module;
+
+    const count = counts[module.name] ?? module.count ?? 0;
+    return {
+      ...module,
+      count,
+      status: count > 0 ? 'active' : 'not-started',
+    };
+  });
+};
+
 // Extended event type for list view
 export interface EventListItem {
   id: string;
@@ -187,6 +265,7 @@ function normalizeEvent(raw: any): EventData {
     ...raw,
     name: raw.name ?? raw.title ?? '',
     slug: raw.slug ?? '',
+    websitePublished: raw.websitePublished ?? false,
     date: raw.date ?? (startDate ? startDate.toISOString().slice(0, 10) : ''),
     time: raw.time ?? (startDate ? startDate.toISOString().slice(11, 16) : ''),
     startDate: raw.startDate ?? (startDate ? startDate.toISOString().slice(0, 10) : ''),
@@ -207,6 +286,37 @@ function normalizeEvent(raw: any): EventData {
           ? 'post-event'
           : 'setup',
     createdAt: raw.createdAt instanceof Date ? raw.createdAt.toISOString() : raw.createdAt,
+  };
+}
+
+function normalizePublishedEvent(overview: PublishedWebsiteOverviewResponse): EventData {
+  const raw = overview.event;
+  const startDate = raw.startsAt ? new Date(raw.startsAt) : null;
+  const endDate = raw.endsAt ? new Date(raw.endsAt) : null;
+  const websiteSettings = (overview.websiteSettings ?? {}) as Record<string, unknown>;
+  const branding = (overview.branding ?? {}) as Record<string, unknown>;
+
+  return {
+    id: raw.id,
+    name: raw.title ?? '',
+    slug: raw.slug ?? '',
+    description: raw.description ?? raw.summary ?? '',
+    date: startDate ? startDate.toISOString().slice(0, 10) : '',
+    time: startDate ? startDate.toISOString().slice(11, 16) : '',
+    endDate: endDate ? endDate.toISOString().slice(0, 10) : undefined,
+    endTime: endDate ? endDate.toISOString().slice(11, 16) : undefined,
+    type: raw.isOnline ? 'Virtual' : 'Physical',
+    websiteUrl: `${window.location.origin}/e/${raw.slug}`,
+    websitePublished: true,
+    coverImageUrl: raw.coverImageUrl ?? undefined,
+    venueLocation: raw.venueAddress ?? raw.venueName ?? '',
+    status: 'published',
+    phase: 'setup',
+    branding: {
+      ...(branding as EventData['branding']),
+      logo: raw.logoUrl ?? undefined,
+    },
+    currency: (websiteSettings.currency as EventData['currency']) ?? config.app.defaultCurrency,
   };
 }
 
@@ -320,8 +430,17 @@ class EventsService {
     const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     const isUuid = UUID_RE.test(eventIdOrSlug);
     const url = isUuid ? `/events/${eventIdOrSlug}` : `/events/slug/${eventIdOrSlug}`;
-    const response = await apiClient.get<ApiResponse<any>>(url);
-    return normalizeEvent(response.data);
+    const response = await apiClient.get<BackendEventResponse>(url);
+    return normalizeEvent(response);
+  }
+
+  async getPublicEventBySlug(slug: string): Promise<EventData> {
+    if (config.features.useMockData) {
+      return this.getEvent(slug);
+    }
+
+    const response = await apiClient.get<PublishedWebsiteOverviewResponse>(`/public/events/${slug}/website`);
+    return normalizePublishedEvent(response);
   }
 
   // Create new event
@@ -369,7 +488,7 @@ class EventsService {
       return newEvent;
     }
 
-    const response = await apiClient.post<ApiResponse<any>>('/events', {
+    const response = await apiClient.post<BackendEventResponse>('/events', {
       tenantId: localStorage.getItem(config.auth.activeTenantKey),
       title: data.name,
       summary: data.description,
@@ -383,7 +502,7 @@ class EventsService {
       isOnline: data.type === 'Virtual',
       coverImageUrl: data.coverImageUrl,
     });
-    return normalizeEvent(response.data);
+    return normalizeEvent(response);
   }
 
   // Update event
@@ -413,7 +532,7 @@ class EventsService {
       return events[index];
     }
 
-    const response = await apiClient.patch<ApiResponse<any>>(`/events/${eventId}`, {
+    const response = await apiClient.patch<BackendEventResponse>(`/events/${eventId}`, {
       title: data.name,
       summary: data.description,
       description: data.description,
@@ -426,7 +545,7 @@ class EventsService {
       isOnline: data.type === 'Virtual',
       coverImageUrl: data.coverImageUrl,
     });
-    return normalizeEvent(response.data);
+    return normalizeEvent(response);
   }
 
   // Delete event
@@ -488,8 +607,8 @@ class EventsService {
     if (config.features.useMockData) {
       return this.updateEvent(eventId, { status: 'published' });
     }
-    const response = await apiClient.post<ApiResponse<any>>(`/events/${eventId}/publish`);
-    return normalizeEvent(response.data);
+    const response = await apiClient.post<BackendEventResponse>(`/events/${eventId}/publish`);
+    return normalizeEvent(response);
   }
 
   // Unpublish event
@@ -497,8 +616,8 @@ class EventsService {
     if (config.features.useMockData) {
       return this.updateEvent(eventId, { status: 'unpublished' });
     }
-    const response = await apiClient.post<ApiResponse<any>>(`/events/${eventId}/archive`);
-    return normalizeEvent(response.data);
+    const response = await apiClient.post<BackendEventResponse>(`/events/${eventId}/archive`);
+    return normalizeEvent(response);
   }
 
   // Upload cover image
@@ -550,18 +669,26 @@ class EventsService {
     if (config.features.useMockData) {
       await delay(300);
       const progress = ensureProgress(eventId);
-      const payloadCounts = getEventPayload<Record<string, number>>(eventId, 'module_counts', {});
-      const serviceCounts = await getServiceModuleCounts(eventId).catch(() => ({}));
-      const counts = { ...payloadCounts, ...serviceCounts };
-      const modulesWithCounts = progress.modules.map(m => ({ ...m, count: counts[m.name] ?? m.count ?? 0 }));
+      const modulesWithCounts = await reconcileModuleProgress(eventId, progress.modules);
       return buildChecklist(modulesWithCounts);
     }
 
     try {
       const response = await apiClient.get<ApiResponse<ChecklistItem[]>>(`/events/${eventId}/checklist`);
-      return response.data;
+      const baseModules = defaultModules().map((module) => {
+        const checklistItem = checklistConfig.find((item) => item.module === module.name);
+        const apiItem = checklistItem ? response.data.find((item) => item.id === checklistItem.id) : null;
+        return {
+          ...module,
+          status: apiItem?.status === 'completed' ? 'active' : module.status,
+          count: apiItem?.count ?? module.count ?? 0,
+        };
+      });
+      const modulesWithCounts = await reconcileModuleProgress(eventId, baseModules);
+      return buildChecklist(modulesWithCounts);
     } catch {
-      return buildChecklist(defaultModules());
+      const modulesWithCounts = await reconcileModuleProgress(eventId, defaultModules());
+      return buildChecklist(modulesWithCounts);
     }
   }
 
@@ -570,17 +697,14 @@ class EventsService {
     if (config.features.useMockData) {
       await delay(300);
       const progress = ensureProgress(eventId);
-      const payloadCounts = getEventPayload<Record<string, number>>(eventId, 'module_counts', {});
-      const serviceCounts = await getServiceModuleCounts(eventId).catch(() => ({}));
-      const counts = { ...payloadCounts, ...serviceCounts };
-      return progress.modules.map(m => ({ ...m, count: counts[m.name] ?? m.count ?? 0 }));
+      return reconcileModuleProgress(eventId, progress.modules);
     }
 
     try {
       const response = await apiClient.get<ApiResponse<Module[]>>(`/events/${eventId}/modules`);
-      return response.data;
+      return reconcileModuleProgress(eventId, response.data);
     } catch {
-      return defaultModules();
+      return reconcileModuleProgress(eventId, defaultModules());
     }
   }
 

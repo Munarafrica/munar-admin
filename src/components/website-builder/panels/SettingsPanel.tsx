@@ -5,10 +5,13 @@ import React from 'react';
 import { Globe, Lock, Users, Search, Link, AlertCircle, Share2 } from 'lucide-react';
 import { WebsiteConfig, AccessControl } from '../../../modules/website/types';
 import { cn } from '../../ui/utils';
+import { AssetLibraryRequestDetail, SingleImageField } from '../SingleImageField';
 
 interface SettingsPanelProps {
   config: WebsiteConfig;
+  eventId?: string;
   eventSlug: string;
+  onOpenAssetLibrary?: (request: AssetLibraryRequestDetail) => void;
   onUpdateConfig: (updates: Partial<WebsiteConfig>) => void;
 }
 
@@ -104,7 +107,7 @@ const ACCESS_OPTIONS: { value: AccessControl; label: string; description: string
   },
 ];
 
-export function SettingsPanel({ config, eventSlug, onUpdateConfig }: SettingsPanelProps) {
+export function SettingsPanel({ config, eventId, eventSlug, onOpenAssetLibrary, onUpdateConfig }: SettingsPanelProps) {
   const publicUrl = `${window.location.origin}/e/${config.slug || eventSlug}`;
 
   return (
@@ -168,6 +171,27 @@ export function SettingsPanel({ config, eventSlug, onUpdateConfig }: SettingsPan
             maxLength={160}
             rows={3}
           />
+
+          <div className="pt-3">
+            <label className="block text-xs font-bold text-slate-600 dark:text-slate-400 mb-1.5">Social Image</label>
+            <SingleImageField
+              value={config.seo.socialImageAsset?.url || config.seo.socialImage}
+              asset={config.seo.socialImageAsset}
+              onChange={(url) => onUpdateConfig({ seo: { ...config.seo, socialImage: url } })}
+              onAssetChange={(asset) => onUpdateConfig({
+                seo: {
+                  ...config.seo,
+                  socialImageAsset: asset,
+                  socialImage: asset?.url,
+                },
+              })}
+              eventId={eventId}
+              category="seo"
+              aspectRatio="landscape"
+              placeholder="Upload social preview image"
+              onOpenAssetLibrary={onOpenAssetLibrary}
+            />
+          </div>
         </div>
 
         {/* Access Control */}

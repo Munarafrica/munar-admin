@@ -7,13 +7,14 @@ import { TicketType, TicketStatus, TicketTypeType, TicketVisibility, Perk } from
 interface CreateTicketModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (ticket: Partial<TicketType>) => void | Promise<void>;
+  onSave: (ticket: Partial<TicketType>) => TicketType | null | void | Promise<TicketType | null | void>;
   /** When provided, puts the modal into edit mode */
   editTicket?: TicketType | null;
 }
 
 const EMPTY_FORM: Partial<TicketType> = {
   type: 'Single',
+  ticketKind: 'SINGLE',
   name: '',
   description: '',
   isFree: false,
@@ -32,6 +33,7 @@ const EMPTY_FORM: Partial<TicketType> = {
   refundPolicy: 'Refundable',
   requireAttendeeInfo: true,
   groupSize: 1,
+  attendeesPerUnit: 1,
   perks: [],
 };
 
@@ -69,6 +71,18 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, on
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const handleTicketTypeChange = (type: TicketTypeType) => {
+    setFormData(prev => ({
+      ...prev,
+      type,
+      ticketKind: type === 'Group' ? 'GROUP' : 'SINGLE',
+      groupSize: type === 'Group' ? (prev.groupSize && prev.groupSize > 1 ? prev.groupSize : 2) : undefined,
+      attendeesPerUnit: type === 'Group'
+        ? (prev.groupSize && prev.groupSize > 1 ? prev.groupSize : 2)
+        : 1,
+    }));
+  };
+
   const addPerk = () => {
     if (perkInput.trim()) {
       const newPerk: Perk = {
@@ -102,10 +116,22 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, on
   const handleSave = async () => {
     // Basic validation
     if (!formData.name) return;
+    const ticketKind = formData.type === 'Group' ? 'GROUP' : 'SINGLE';
+    const groupSize = ticketKind === 'GROUP'
+      ? Math.max(2, Number(formData.groupSize || 2))
+      : undefined;
+    const payload: Partial<TicketType> = {
+      ...formData,
+      ticketKind,
+      attendeesPerUnit: ticketKind === 'GROUP' ? groupSize : 1,
+      ...(ticketKind === 'GROUP' ? { groupSize } : { groupSize: undefined }),
+    };
     setIsSaving(true);
     try {
-      await onSave(formData);
-      onClose();
+      const result = await onSave(payload);
+      if (result !== null) {
+        onClose();
+      }
     } catch {
       // Error handled by parent
     } finally {
@@ -137,7 +163,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, on
              <label className="text-sm font-semibold text-slate-900 dark:text-slate-100">Ticket Type</label>
              <div className="grid grid-cols-2 gap-4">
                 <button 
-                  onClick={() => handleInputChange('type', 'Single')}
+                  onClick={() => handleTicketTypeChange('Single')}
                   className={cn(
                     "flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all",
                     formData.type === 'Single' 
@@ -155,7 +181,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, on
                 </button>
 
                 <button 
-                   onClick={() => handleInputChange('type', 'Group')}
+                   onClick={() => handleTicketTypeChange('Group')}
                    className={cn(
                     "flex flex-col items-center gap-3 p-4 rounded-xl border-2 transition-all",
                     formData.type === 'Group' 
@@ -193,8 +219,15 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, on
                         <input 
                             type="number" 
                             min="2"
-                            value={formData.groupSize}
-                            onChange={(e) => handleInputChange('groupSize', parseInt(e.target.value))}
+                            value={formData.groupSize ?? 2}
+                            onChange={(e) => {
+                              const nextSize = Math.max(2, parseInt(e.target.value || '2', 10));
+                              setFormData(prev => ({
+                                ...prev,
+                                groupSize: nextSize,
+                                attendeesPerUnit: nextSize,
+                              }));
+                            }}
                             className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 rounded-lg focus:outline-none focus:border-indigo-500 text-sm bg-white dark:bg-slate-950 text-slate-900 dark:text-slate-100"
                         />
                     </div>
@@ -445,7 +478,7 @@ export const CreateTicketModal: React.FC<CreateTicketModalProps> = ({ isOpen, on
                 <h3>Status</h3>
              </div>
              <div className="flex flex-wrap gap-2">
-                 {(['On Sale', 'Draft', 'Hidden'] as const).map((st) => (
+                 {(['On Sale', 'Draft', 'Pause'] as const).map((st) => (
                      <button
                         key={st}
                         onClick={() => handleInputChange('status', st)}

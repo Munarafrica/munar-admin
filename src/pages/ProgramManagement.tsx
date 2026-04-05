@@ -9,7 +9,7 @@ import { ScheduleTab } from "../components/event-dashboard/program/ScheduleTab";
 import { eventsService } from "../services";
 import { getCurrentEventId } from "../lib/event-storage";
 import { useProgram } from "../hooks/useProgram";
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface ProgramManagementProps {
   onNavigate?: (page: Page) => void;

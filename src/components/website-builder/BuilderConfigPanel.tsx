@@ -4,6 +4,7 @@
 import React from 'react';
 import { Layers, Palette, Settings } from 'lucide-react';
 import { WebsiteConfig, WebsiteTheme, SectionId, AccessControl } from '../../modules/website/types';
+import { AssetLibraryRequestDetail } from './SingleImageField';
 import { SectionsPanel } from './panels/SectionsPanelV2';
 import { DesignPanel } from './panels/DesignPanel';
 import { SettingsPanel } from './panels/SettingsPanel';
@@ -18,6 +19,7 @@ interface BuilderConfigPanelProps {
   selectedSection: SectionId | null;
   eventSlug: string;
   eventId?: string;
+  onOpenAssetLibrary?: (request: AssetLibraryRequestDetail) => void;
   onTabChange: (tab: ConfigPanelTab) => void;
   onSelectSection: (id: SectionId) => void;
   onToggleSection: (id: SectionId) => void;
@@ -39,6 +41,7 @@ export function BuilderConfigPanel({
   selectedSection,
   eventSlug,
   eventId,
+  onOpenAssetLibrary,
   onTabChange,
   onSelectSection,
   onToggleSection,
@@ -75,6 +78,7 @@ export function BuilderConfigPanel({
             config={config}
             selectedSection={selectedSection}
             eventId={eventId}
+            onOpenAssetLibrary={onOpenAssetLibrary}
             onSelectSection={onSelectSection}
             onToggleSection={onToggleSection}
             onSwapSections={onSwapSections}
@@ -84,6 +88,8 @@ export function BuilderConfigPanel({
         {activeTab === 'design' && (
           <DesignPanel
             config={config}
+            eventId={eventId}
+            onOpenAssetLibrary={onOpenAssetLibrary}
             onUpdateTheme={onUpdateTheme}
             onUpdateConfig={onUpdateConfig}
             onResetTheme={onResetTheme}
@@ -92,7 +98,9 @@ export function BuilderConfigPanel({
         {activeTab === 'settings' && (
           <SettingsPanel
             config={config}
+            eventId={eventId}
             eventSlug={eventSlug}
+            onOpenAssetLibrary={onOpenAssetLibrary}
             onUpdateConfig={onUpdateConfig}
           />
         )}

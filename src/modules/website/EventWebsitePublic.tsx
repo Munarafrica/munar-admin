@@ -14,7 +14,10 @@ import {
   WebsiteConfig,
   DEFAULT_WEBSITE_CONFIG,
   DEFAULT_SECTIONS,
+  PreviewBreakpoint,
   SectionId,
+  SectionOverrides,
+  WebsitePreviewConfigUpdateMessage,
   WebsitePreviewMessage,
   WebsitePreviewReadyMessage,
   WebsiteSectionClickMessage,
@@ -23,6 +26,43 @@ import { Speaker, Session } from '../../components/event-dashboard/types';
 import { Sponsor } from '../../types/sponsors';
 import { HorizonTemplate } from './templates/HorizonTemplate';
 import { PulseTemplate } from './templates/PulseTemplate';
+
+function extractSections(sectionsJson?: Record<string, unknown> | null): WebsiteConfig['sections'] | null {
+  if (!sectionsJson) return null;
+  const rawSections = 'sections' in sectionsJson
+    ? (sectionsJson.sections as unknown)
+    : sectionsJson;
+  if (!Array.isArray(rawSections)) return null;
+
+  const normalized = rawSections
+    .map((section, index) => {
+      if (!section || typeof section !== 'object') return null;
+
+      const raw = section as Record<string, unknown>;
+      const props = (raw.props && typeof raw.props === 'object' ? raw.props : {}) as Record<string, unknown>;
+      const id = typeof raw.id === 'string'
+        ? raw.id
+        : typeof raw.type === 'string'
+          ? raw.type
+          : null;
+
+      if (!id) return null;
+
+      return {
+        id,
+        label: typeof props.label === 'string' ? props.label : id,
+        visible: typeof props.visible === 'boolean' ? props.visible : true,
+        order: typeof props.order === 'number' ? props.order : index,
+        variant: typeof props.variant === 'string' ? props.variant : undefined,
+        overrides: (props.overrides && typeof props.overrides === 'object'
+          ? props.overrides
+          : undefined) as WebsiteConfig['sections'][number]['overrides'],
+      };
+    })
+    .filter((section): section is WebsiteConfig['sections'][number] => !!section);
+
+  return normalized.length ? normalized : null;
+}
 
 // ── Access Control Gates ────────────────────────────────────────────────────
 
@@ -122,6 +162,7 @@ export function EventWebsitePublic() {
     sections: [...DEFAULT_SECTIONS],
   }));
   const [selectedSection, setSelectedSection] = useState<SectionId | null>(null);
+  const [activeBreakpoint, setActiveBreakpoint] = useState<PreviewBreakpoint>('desktop');
   const [passwordUnlocked, setPasswordUnlocked] = useState(() => {
     try { return sessionStorage.getItem('munar_pw_unlocked') === '1'; } catch { return false; }
   });
@@ -147,7 +188,7 @@ export function EventWebsitePublic() {
           setConfig((prev) => ({
             ...prev,
             ...(overview?.websiteSettings as Partial<WebsiteConfig> | undefined),
-            sections: (page?.page.sectionsJson as WebsiteConfig['sections']) || prev.sections,
+            sections: extractSections(page?.page.sectionsJson) || prev.sections,
             seo: {
               ...prev.seo,
               ...(page?.page.seoJson as Record<string, string> | undefined),
@@ -186,6 +227,7 @@ export function EventWebsitePublic() {
       if (event.data?.type === 'WEBSITE_PREVIEW_CONFIG') {
         const msg = event.data as WebsitePreviewMessage;
         setConfig(msg.config);
+        setActiveBreakpoint(msg.previewMode || 'desktop');
         if (msg.selectedSectionId !== undefined) {
           setSelectedSection(msg.selectedSectionId ?? null);
         }
@@ -208,6 +250,63 @@ export function EventWebsitePublic() {
     if (!isPreviewMode) return;
     const msg: WebsiteSectionClickMessage = { type: 'WEBSITE_SECTION_CLICK', sectionId: id };
     window.parent.postMessage(msg, '*');
+  };
+
+  const handleSectionOverrideUpdate = (sectionId: SectionId, overrides: SectionOverrides) => {
+    setConfig((prev) => {
+      const updates: Partial<WebsiteConfig> = {
+        sections: prev.sections.map((section) =>
+          section.id === sectionId ? { ...section, overrides } : section
+        ),
+      };
+
+      if (window.parent !== window) {
+        const msg: WebsitePreviewConfigUpdateMessage = {
+          type: 'WEBSITE_PREVIEW_CONFIG_UPDATE',
+          updates,
+        };
+        window.parent.postMessage(msg, '*');
+      }
+
+      return {
+        ...prev,
+        ...updates,
+      };
+    });
+  };
+
+  const handleSectionReorder = (sectionId: SectionId, direction: 'up' | 'down') => {
+    setConfig((prev) => {
+      const sections = [...prev.sections].sort((a, b) => a.order - b.order);
+      const index = sections.findIndex((section) => section.id === sectionId);
+      if (index === -1) return prev;
+
+      const swapIndex = direction === 'up' ? index - 1 : index + 1;
+      if (swapIndex < 0 || swapIndex >= sections.length) return prev;
+
+      const current = sections[index];
+      const target = sections[swapIndex];
+      const nextSections = prev.sections.map((section) => {
+        if (section.id === current.id) return { ...section, order: target.order };
+        if (section.id === target.id) return { ...section, order: current.order };
+        return section;
+      });
+
+      const updates: Partial<WebsiteConfig> = { sections: nextSections };
+
+      if (window.parent !== window) {
+        const msg: WebsitePreviewConfigUpdateMessage = {
+          type: 'WEBSITE_PREVIEW_CONFIG_UPDATE',
+          updates,
+        };
+        window.parent.postMessage(msg, '*');
+      }
+
+      return {
+        ...prev,
+        sections: nextSections,
+      };
+    });
   };
 
   if (!currentEvent) return null;
@@ -237,6 +336,10 @@ export function EventWebsitePublic() {
     sponsors,
     onSectionClick: isPreviewMode ? handleSectionClick : undefined,
     selectedSection: isPreviewMode ? selectedSection : null,
+    isPreviewMode,
+    activeBreakpoint,
+    onSectionOverrideUpdate: isPreviewMode ? handleSectionOverrideUpdate : undefined,
+    onSectionReorder: isPreviewMode ? handleSectionReorder : undefined,
   };
 
   return (

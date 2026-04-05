@@ -1,86 +1,50 @@
-// Public Merchandise Page - Attendee-facing store
-// Route: /e/:eventSlug/merch
-
 import React from 'react';
-import { useEvent } from '../../contexts';
-import { useBrandSafe } from '../../contexts/BrandContext';
-import { Button } from '../../components/ui/button';
-import { ShoppingBag, ArrowLeft } from 'lucide-react';
 import { Link } from 'react-router-dom';
+import { ArrowLeft, Lock, ShoppingBag } from 'lucide-react';
+import { useEvent } from '../../contexts';
 
 export function MerchPublic() {
   const { currentEvent } = useEvent();
-  const { branding } = useBrandSafe();
 
-  if (!currentEvent) return null;
-
-  // Mock product data for stub
-  const products = [
-    { id: 'p1', name: 'Event T-Shirt', price: 8000, currency: 'NGN', imageUrl: '', inStock: true },
-    { id: 'p2', name: 'Branded Hoodie', price: 15000, currency: 'NGN', imageUrl: '', inStock: true },
-    { id: 'p3', name: 'Digital Badge', price: 0, currency: 'NGN', imageUrl: '', inStock: true },
-  ];
+  if (!currentEvent) {
+    return null;
+  }
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-['Raleway']">
-      {/* Header */}
-      <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
-        <div className="max-w-4xl mx-auto px-4 py-6">
+    <div className="min-h-screen bg-slate-50 font-['Raleway'] dark:bg-slate-950">
+      <div className="border-b border-slate-200 bg-white dark:border-slate-800 dark:bg-slate-900">
+        <div className="mx-auto max-w-4xl px-4 py-6">
           <Link
             to={`/e/${currentEvent.slug || currentEvent.id}`}
-            className="inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mb-4"
+            className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
           >
-            <ArrowLeft className="w-4 h-4" />
+            <ArrowLeft className="h-4 w-4" />
             Back to event
           </Link>
+        </div>
+      </div>
 
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-              <ShoppingBag className="w-5 h-5 text-slate-600 dark:text-slate-400" />
-            </div>
-            <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                Merchandise
-              </h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                {currentEvent.name}
+      <div className="mx-auto flex max-w-4xl items-center justify-center px-4 py-16">
+        <div className="w-full max-w-2xl rounded-[2rem] border border-slate-200 bg-white p-8 text-center shadow-sm dark:border-slate-800 dark:bg-slate-900">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-slate-100 dark:bg-slate-800">
+            <ShoppingBag className="h-7 w-7 text-slate-700 dark:text-slate-200" />
+          </div>
+          <h1 className="mt-6 text-3xl font-semibold text-slate-900 dark:text-slate-100">Merchandise coming soon</h1>
+          <p className="mt-3 text-sm leading-6 text-slate-500 dark:text-slate-400">
+            The current backend does not expose a public merch storefront endpoint yet, so this event’s
+            merchandise can only be managed from the organizer dashboard for now.
+          </p>
+
+          <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-100">
+            <div className="flex items-start gap-3">
+              <Lock className="mt-0.5 h-4 w-4 shrink-0" />
+              <p>
+                Public product discovery, guest checkout, and merch payment initialization still require backend
+                support before this page can become a live storefront.
               </p>
             </div>
           </div>
         </div>
-      </div>
-
-      {/* Product Grid */}
-      <div className="max-w-4xl mx-auto px-4 py-8">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {products.map((product) => (
-            <div
-              key={product.id}
-              className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl overflow-hidden hover:shadow-md transition-shadow"
-            >
-              <div className="aspect-square bg-slate-100 dark:bg-slate-800 flex items-center justify-center">
-                <ShoppingBag className="w-12 h-12 text-slate-300 dark:text-slate-600" />
-              </div>
-              <div className="p-4">
-                <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-1">
-                  {product.name}
-                </h3>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-3">
-                  {product.price === 0
-                    ? 'Free'
-                    : `${product.currency} ${product.price.toLocaleString()}`}
-                </p>
-                <Button size="sm" className="w-full rounded-xl">
-                  Add to Cart
-                </Button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="text-center py-6 text-xs text-slate-400 dark:text-slate-600">
-        Powered by Munar
       </div>
     </div>
   );

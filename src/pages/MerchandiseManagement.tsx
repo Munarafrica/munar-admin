@@ -1,564 +1,370 @@
-// Merchandise Management Page
-import React, { useState } from 'react';
-import { Page } from '../App';
+import React, { useMemo, useState } from 'react';
 import { TopBar } from '../components/dashboard/TopBar';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
 import { ProductCard } from '../components/merchandise/ProductCard';
 import { OrderRow } from '../components/merchandise/OrderRow';
-import { ProductModal } from '../components/merchandise/ProductModal';
+import { ProductModal, type ProductModalValues } from '../components/merchandise/ProductModal';
 import { OrderDetailModal } from '../components/merchandise/OrderDetailModal';
 import { AnalyticsTab } from '../components/merchandise/AnalyticsTab';
 import { SettingsTab } from '../components/merchandise/SettingsTab';
-import { useProducts, useOrders } from '../hooks';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { MerchandiseProvider, useMerchandise } from '../contexts';
-import { Product, Order, CreateProductRequest, MerchandiseSettings } from '../types/merchandise';
-import { cn } from '../components/ui/utils';
+import { useOrders, useProducts } from '../hooks';
+import { getCurrentEventId } from '../lib/event-storage';
+import { Page } from '../App';
+import type { FulfillmentStatus, Order, Product } from '../types/merchandise';
+import { merchandiseService } from '../services';
 import {
-  Package,
-  ShoppingCart,
+  AlertTriangle,
   BarChart3,
+  Package,
   Plus,
   Search,
-  Download,
-  DollarSign,
-  ShoppingBag,
   Settings,
-  Filter,
-  Link as LinkIcon,
-  ExternalLink,
-  Copy,
-  ChevronLeft,
+  ShoppingBag,
 } from 'lucide-react';
-import { eventsService } from '../services';
-import { getCurrentEventId } from '../lib/event-storage';
 
 interface MerchandiseManagementProps {
   onNavigate: (page: Page) => void;
 }
 
+const formatMoney = (amountMinor: number, currency: string) =>
+  new Intl.NumberFormat('en-NG', {
+    style: 'currency',
+    currency,
+    minimumFractionDigits: 0,
+  }).format(amountMinor / 100);
+
 const MerchandiseManagementContent: React.FC<MerchandiseManagementProps> = ({ onNavigate }) => {
-  const [activeTab, setActiveTab] = useState<'products' | 'orders' | 'analytics' | 'settings'>('products');
   const eventId = getCurrentEventId();
+  const [activeTab, setActiveTab] = useState('products');
   const [productSearch, setProductSearch] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
-  
-  // Modal states
   const [showProductModal, setShowProductModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | undefined>();
-  const [showOrderModal, setShowOrderModal] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
-  
-  // Filter states
-  const [productStatusFilter, setProductStatusFilter] = useState<string>('all');
-  const [orderStatusFilter, setOrderStatusFilter] = useState<string>('all');
 
-  // Hooks
-  const { 
-    products, 
-    isLoading: productsLoading, 
+  const {
+    products,
+    isLoading: productsLoading,
     createProduct,
     updateProduct,
-    duplicateProduct, 
-    deleteProduct,
     publishProduct,
     archiveProduct,
-  } = useProducts({
-    eventId,
-  });
+    fetchProducts,
+  } = useProducts({ eventId });
 
   const {
     orders,
     isLoading: ordersLoading,
-    searchOrders,
-    markFulfilled,
-    cancelOrder,
-    refundOrder,
-    exportOrders,
-  } = useOrders({
-    eventId,
-  });
+    fetchOrders,
+    updateOrder,
+    meta,
+  } = useOrders({ eventId });
 
-  const updateMerchCount = (count: number, message?: string) => {
-    eventsService.updateModuleCount(eventId, 'Merchandise', count, message, 'shopping-bag');
-  };
+  const {
+    analytics,
+    settings,
+    isLoading: merchandiseLoading,
+    updateSettings,
+    refreshAnalytics,
+    refreshProducts,
+    refreshOrders,
+  } = useMerchandise();
 
-  const { analytics, settings, isLoading: contextLoading, updateSettings } = useMerchandise();
+  const filteredProducts = useMemo(() => {
+    const search = productSearch.trim().toLowerCase();
+    if (!search) {
+      return products;
+    }
 
-  // Filtered products
-  const filteredProducts = products.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(productSearch.toLowerCase()) ||
-      p.sku?.toLowerCase().includes(productSearch.toLowerCase());
-    const matchesStatus = productStatusFilter === 'all' || p.status === productStatusFilter;
-    return matchesSearch && matchesStatus;
-  });
-  
-  // Filtered orders
-  const filteredOrders = orders.filter(o => {
-    const matchesStatus = orderStatusFilter === 'all' || o.status === orderStatusFilter;
-    return matchesStatus;
-  });
+    return products.filter((product) =>
+      [product.name, product.description ?? ''].some((value) => value.toLowerCase().includes(search)),
+    );
+  }, [productSearch, products]);
 
-  // Handlers
-  const handleAddProduct = () => {
-    setEditingProduct(undefined);
-    setShowProductModal(true);
-  };
-  
-  const handleEditProduct = (product: Product) => {
-    setEditingProduct(product);
-    setShowProductModal(true);
-  };
-  
-  const handleSaveProduct = async (productData: CreateProductRequest) => {
+  const filteredOrders = useMemo(() => {
+    const search = orderSearch.trim().toLowerCase();
+    if (!search) {
+      return orders;
+    }
+
+    return orders.filter((order) => {
+      const haystacks = [
+        order.orderNumber ?? order.id,
+        order.displayEmail ?? '',
+        order.items.map((item) => item.product.name).join(' '),
+      ];
+
+      return haystacks.some((value) => value.toLowerCase().includes(search));
+    });
+  }, [orderSearch, orders]);
+
+  const handleSaveProduct = async ({ product, variants }: ProductModalValues) => {
+    if (!eventId) {
+      return;
+    }
+
     if (editingProduct) {
-      await updateProduct(editingProduct.id, productData);
-    } else {
-      const created = await createProduct(productData);
-      if (created) {
-        updateMerchCount(products.length + 1, `Created product "${created.name}"`);
-      }
+      await updateProduct(editingProduct.id, product);
+      await refreshProducts();
+      await refreshAnalytics();
+      return;
     }
-  };
 
-  const handleDuplicateProduct = async (productId: string) => {
-    const duplicated = await duplicateProduct(productId);
-    if (duplicated) {
-      updateMerchCount(products.length + 1, `Duplicated product "${duplicated.name}"`);
+    const created = await createProduct(product);
+    if (!created) {
+      return;
     }
-  };
 
-  const handleDeleteProduct = async (productId: string) => {
-    const deleted = await deleteProduct(productId);
-    if (deleted) {
-      updateMerchCount(Math.max(products.length - 1, 0), 'Product deleted');
+    for (const variant of variants) {
+      await merchandiseService.createProductVariant(created.id, variant);
     }
-  };
-  
-  const handleViewOrder = (order: Order) => {
-    setSelectedOrder(order);
-    setShowOrderModal(true);
-  };
-  
-  const handleFulfillOrder = async (orderId: string, _verificationData?: { method: string; notes?: string }) => {
-    await markFulfilled(orderId);
-  };
-  
-  const handleCancelOrder = async (orderId: string) => {
-    await cancelOrder(orderId);
-  };
-  
-  const handleRefundOrder = async (orderId: string) => {
-    await refundOrder(orderId);
-  };
-  
-  const handleSaveSettings = async (newSettings: Partial<MerchandiseSettings>) => {
-    await updateSettings(newSettings);
+
+    await fetchProducts();
+    await refreshProducts();
+    await refreshAnalytics();
   };
 
-  const eventName = 'Lagos Tech Summit 2026';
-  const slugify = (value: string) =>
-    value
-      .toLowerCase()
-      .trim()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)+/g, '') || 'event';
-
-  const eventSubdomain = slugify(eventName);
-  const shopUrl = `https://${eventSubdomain}.munar.com/shop`;
-
-  const copyLink = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch (err) {
-      console.error('Failed to copy link', err);
-    }
+  const handleUpdateFulfillment = async (orderId: string, status: FulfillmentStatus) => {
+    await updateOrder(orderId, { fulfillmentStatus: status });
+    await fetchOrders();
+    await refreshOrders();
+    await refreshAnalytics();
+    setSelectedOrder((current) => (current && current.id === orderId ? { ...current, fulfillmentStatus: status } : current));
   };
 
-  // Format currency
-  const formatCurrency = (value: number) =>
-    new Intl.NumberFormat('en-NG', {
-      style: 'currency',
-      currency: 'NGN',
-      minimumFractionDigits: 0,
-    }).format(value);
+  const revenueCurrency = products[0]?.currency ?? orders[0]?.currency ?? 'NGN';
+  const summaryRevenue = analytics?.totalRevenueMinor ?? 0;
+  const merchEnabled = settings?.enabled ?? false;
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] dark:bg-background flex flex-col font-['Raleway']">
+    <div className="min-h-screen bg-[#f8fafc] font-['Raleway'] dark:bg-background">
       <TopBar onNavigate={onNavigate} />
 
-      <main className="flex-1 max-w-[1440px] mx-auto w-full px-4 md:px-6 py-4 md:py-8">
-        {/* Header */}
-        <div className="flex flex-col md:flex-row md:items-start justify-between gap-4 mb-8">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 text-xs md:text-sm text-slate-500 dark:text-slate-400 font-medium mb-1">
-              <button
-                onClick={() => onNavigate?.('event-dashboard')}
-                className="flex items-center gap-1 hover:text-slate-900 dark:hover:text-slate-200 cursor-pointer transition-colors"
-              >
-                <ChevronLeft className="w-4 h-4" />
-                Back
-              </button>
-            </div>
-            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 dark:text-slate-100">
-              Merchandise
-            </h1>
-            <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-2xl">
-              Sell physical and digital merchandise to attendees. Manage products, orders, inventory and fulfilment.
-            </p>
-          </div>
-          <div className="flex flex-col gap-2 md:items-end shrink-0">
-            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-700 dark:text-slate-200">
-              <LinkIcon className="w-4 h-4 text-indigo-600" />
-              <span className="truncate max-w-[200px]" title={shopUrl}>{shopUrl}</span>
-              <button onClick={() => copyLink(shopUrl)} className="p-1 hover:text-indigo-600" title="Copy link">
-                <Copy className="w-4 h-4" />
-              </button>
-              <a href={shopUrl} target="_blank" rel="noreferrer" className="p-1 hover:text-indigo-600" title="Open">
-                <ExternalLink className="w-4 h-4" />
-              </a>
-            </div>
-            <Button 
-              onClick={handleAddProduct}
-              className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 shadow-sm shadow-indigo-200 dark:shadow-none"
+      <main className="mx-auto flex w-full max-w-[1440px] flex-1 flex-col gap-6 px-4 py-6 md:px-6">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="space-y-2">
+            <button
+              onClick={() => onNavigate('event-dashboard')}
+              className="text-sm text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
             >
-              <Plus className="w-4 h-4" />
-              Add Product
+              Back to event dashboard
+            </button>
+            <div>
+              <h1 className="text-3xl font-semibold text-slate-900 dark:text-slate-100">Merchandise</h1>
+              <p className="mt-1 max-w-2xl text-sm text-slate-500 dark:text-slate-400">
+                Organizer-facing merch management built around the current backend: products, variants,
+                orders, and fulfillment updates.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-3">
+            <Button variant="outline" onClick={() => setActiveTab('settings')}>
+              <Settings className="mr-2 h-4 w-4" />
+              Merch settings
+            </Button>
+            <Button
+              onClick={() => {
+                setEditingProduct(undefined);
+                setShowProductModal(true);
+              }}
+            >
+              <Plus className="mr-2 h-4 w-4" />
+              Add product
             </Button>
           </div>
         </div>
 
-        {/* Stats Grid */}
-        {analytics && (
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400 rounded-lg">
-                  <DollarSign className="w-5 h-5" />
-                </div>
-                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Total Revenue
-                </span>
+        {!merchEnabled ? (
+          <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-100">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+              <div>
+                <p className="font-semibold">Merch is not enabled in event settings</p>
+                <p className="mt-1 text-sm">
+                  The backend can still accept merch requests even while the module flag is off, but the frontend
+                  should use `modulesEnabledJson.merchandising` to decide whether merch UI is available.
+                </p>
               </div>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {formatCurrency(analytics.totalRevenue)}
-              </p>
             </div>
+          </section>
+        ) : null}
 
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg">
-                  <ShoppingCart className="w-5 h-5" />
+        <section className="grid gap-4 md:grid-cols-4">
+          {[
+            {
+              label: 'Revenue',
+              value: formatMoney(summaryRevenue, revenueCurrency),
+              icon: ShoppingBag,
+            },
+            {
+              label: 'Products',
+              value: String(products.length),
+              icon: Package,
+            },
+            {
+              label: 'Orders',
+              value: String(meta?.totalItems ?? orders.length),
+              icon: ShoppingBag,
+            },
+            {
+              label: 'Pending',
+              value: String(analytics?.pendingOrdersCount ?? 0),
+              icon: BarChart3,
+            },
+          ].map((item) => (
+            <div key={item.label} className="rounded-3xl border border-slate-200 bg-white p-5 dark:border-slate-800 dark:bg-slate-900">
+              <div className="flex items-center gap-3">
+                <div className="rounded-2xl bg-slate-100 p-3 dark:bg-slate-800">
+                  <item.icon className="h-5 w-5 text-slate-700 dark:text-slate-200" />
                 </div>
-                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">Orders</span>
+                <div>
+                  <p className="text-xs uppercase tracking-[0.3em] text-slate-400">{item.label}</p>
+                  <p className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">{item.value}</p>
+                </div>
               </div>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {analytics.ordersCount}
-              </p>
             </div>
+          ))}
+        </section>
 
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-lg">
-                  <ShoppingBag className="w-5 h-5" />
+        <section className="rounded-3xl border border-slate-200 bg-white p-4 dark:border-slate-800 dark:bg-slate-900">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="mb-6">
+              <TabsTrigger value="products">Products</TabsTrigger>
+              <TabsTrigger value="orders">Orders</TabsTrigger>
+              <TabsTrigger value="analytics">Analytics</TabsTrigger>
+              <TabsTrigger value="settings">Settings</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="products" className="space-y-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative max-w-md flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    value={productSearch}
+                    onChange={(event) => setProductSearch(event.target.value)}
+                    placeholder="Search products"
+                    className="pl-9"
+                  />
                 </div>
-                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Items Sold
-                </span>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Products are event-scoped and ordered by newest first.
+                </p>
               </div>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {analytics.itemsSold}
-              </p>
-            </div>
 
-            <div className="bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm">
-              <div className="flex items-center gap-3 mb-2">
-                <div className="p-2 bg-amber-50 dark:bg-amber-900/20 text-amber-600 dark:text-amber-400 rounded-lg">
-                  <BarChart3 className="w-5 h-5" />
+              {productsLoading || merchandiseLoading ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">Loading merch products...</p>
+              ) : filteredProducts.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-200 p-12 text-center dark:border-slate-800">
+                  <p className="text-lg font-medium text-slate-900 dark:text-slate-100">No products yet</p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    Create your first merch product in draft, then activate it when ready.
+                  </p>
                 </div>
-                <span className="text-sm font-medium text-slate-500 dark:text-slate-400">
-                  Avg Order
-                </span>
-              </div>
-              <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                {formatCurrency(analytics.averageOrderValue)}
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* Tabs & Content */}
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm min-h-[600px] flex flex-col transition-colors">
-          {/* Tabs Header */}
-          <div className="border-b border-slate-200 dark:border-slate-800 px-2 flex overflow-x-auto scrollbar-hide">
-            {[
-              { id: 'products', label: 'Products', icon: Package },
-              { id: 'orders', label: 'Orders', icon: ShoppingCart },
-              { id: 'analytics', label: 'Analytics', icon: BarChart3 },
-              { id: 'settings', label: 'Settings', icon: Settings },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as typeof activeTab)}
-                className={cn(
-                  'flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-all whitespace-nowrap',
-                  activeTab === tab.id
-                    ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400'
-                    : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700'
-                )}
-              >
-                <tab.icon className="w-4 h-4" />
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Tab Content */}
-          <div className="p-6 flex-1">
-            {/* PRODUCTS TAB */}
-            {activeTab === 'products' && (
-              <div className="space-y-6">
-                {/* Toolbar */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex flex-1 gap-3 w-full sm:w-auto">
-                    <div className="relative flex-1 max-w-md">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" />
-                      <Input
-                        type="search"
-                        placeholder="Search products..."
-                        value={productSearch}
-                        onChange={(e) => setProductSearch(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                    <select
-                      value={productStatusFilter}
-                      onChange={(e) => setProductStatusFilter(e.target.value)}
-                      className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="all">All Status</option>
-                      <option value="active">Active</option>
-                      <option value="draft">Draft</option>
-                      <option value="sold-out">Sold Out</option>
-                      <option value="archived">Archived</option>
-                    </select>
-                  </div>
-                  <Button 
-                    onClick={handleAddProduct}
-                    className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 sm:hidden"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Product
-                  </Button>
+              ) : (
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  {filteredProducts.map((product) => (
+                    <ProductCard
+                      key={product.id}
+                      product={product}
+                      onEdit={(current) => {
+                        setEditingProduct(current);
+                        setShowProductModal(true);
+                      }}
+                      onPublish={(current) => publishProduct(current.id)}
+                      onArchive={(current) => archiveProduct(current.id)}
+                    />
+                  ))}
                 </div>
+              )}
+            </TabsContent>
 
-                {/* Products Grid */}
-                {productsLoading ? (
-                  <div className="flex flex-col items-center justify-center h-64 text-center">
-                    <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />
-                    <p className="text-slate-500 dark:text-slate-400">Loading products...</p>
-                  </div>
-                ) : filteredProducts.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-64 text-center">
-                    <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                      <Package className="w-8 h-8 text-slate-400 dark:text-slate-500" />
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                      {products.length === 0 ? 'No products created yet' : 'No products match your filters'}
-                    </h3>
-                    <p className="text-slate-500 dark:text-slate-400 max-w-xs mt-1">
-                      {products.length === 0 
-                        ? 'Create your first product to start selling merchandise for your event.'
-                        : 'Try adjusting your search or filter criteria.'}
-                    </p>
-                    {products.length === 0 && (
-                      <Button 
-                        onClick={handleAddProduct}
-                        className="mt-4 bg-indigo-600 text-white gap-2"
-                      >
-                        <Plus className="w-4 h-4" />
-                        Add Product
-                      </Button>
-                    )}
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                    {filteredProducts.map((product) => (
-                      <ProductCard
-                        key={product.id}
-                        product={product}
-                        onEdit={() => handleEditProduct(product)}
-                        onDuplicate={() => handleDuplicateProduct(product.id)}
-                        onDelete={() => handleDeleteProduct(product.id)}
-                        onPublish={() => publishProduct(product.id)}
-                        onArchive={() => archiveProduct(product.id)}
-                      />
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ORDERS TAB */}
-            {activeTab === 'orders' && (
-              <div className="space-y-6">
-                {/* Toolbar */}
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-                  <div className="flex flex-1 gap-3 w-full sm:w-auto">
-                    <div className="relative flex-1 max-w-md">
-                      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 dark:text-slate-500" />
-                      <Input
-                        type="search"
-                        placeholder="Search orders..."
-                        value={orderSearch}
-                        onChange={(e) => {
-                          setOrderSearch(e.target.value);
-                          searchOrders(e.target.value);
-                        }}
-                        className="pl-10"
-                      />
-                    </div>
-                    <select
-                      value={orderStatusFilter}
-                      onChange={(e) => setOrderStatusFilter(e.target.value)}
-                      className="px-3 py-2 bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded-xl text-sm text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    >
-                      <option value="all">All Status</option>
-                      <option value="pending">Pending</option>
-                      <option value="paid">Paid</option>
-                      <option value="fulfilled">Fulfilled</option>
-                      <option value="cancelled">Cancelled</option>
-                      <option value="refunded">Refunded</option>
-                    </select>
-                  </div>
-                  <Button
-                    variant="outline"
-                    className="gap-2 dark:bg-slate-800 dark:border-slate-700"
-                    onClick={() => exportOrders('csv')}
-                  >
-                    <Download className="w-4 h-4" />
-                    Export
-                  </Button>
+            <TabsContent value="orders" className="space-y-6">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div className="relative max-w-md flex-1">
+                  <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                  <Input
+                    value={orderSearch}
+                    onChange={(event) => setOrderSearch(event.target.value)}
+                    placeholder="Search orders"
+                    className="pl-9"
+                  />
                 </div>
-
-                {/* Orders Table */}
-                {ordersLoading ? (
-                  <div className="flex flex-col items-center justify-center h-64 text-center">
-                    <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mb-4" />
-                    <p className="text-slate-500 dark:text-slate-400">Loading orders...</p>
-                  </div>
-                ) : filteredOrders.length === 0 ? (
-                  <div className="flex flex-col items-center justify-center h-64 text-center">
-                    <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
-                      <ShoppingCart className="w-8 h-8 text-slate-400 dark:text-slate-500" />
-                    </div>
-                    <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
-                      {orders.length === 0 ? 'No orders yet' : 'No orders match your filters'}
-                    </h3>
-                    <p className="text-slate-500 dark:text-slate-400 max-w-xs mt-1">
-                      {orders.length === 0 
-                        ? 'Orders will appear here when customers make purchases.'
-                        : 'Try adjusting your search or filter criteria.'}
-                    </p>
-                  </div>
-                ) : (
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="border-b border-slate-200 dark:border-slate-800">
-                          <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                            Order
-                          </th>
-                          <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                            Customer
-                          </th>
-                          <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                            Items
-                          </th>
-                          <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                            Fulfilment
-                          </th>
-                          <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                            Status
-                          </th>
-                          <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider">
-                            Total
-                          </th>
-                          <th className="py-3 px-4 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider text-right">
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                        {filteredOrders.map((order) => (
-                          <OrderRow
-                            key={order.id}
-                            order={order}
-                            onView={() => handleViewOrder(order)}
-                            onMarkFulfilled={() => markFulfilled(order)}
-                            onCancel={() => cancelOrder(order)}
-                            onRefund={() => refundOrder(order)}
-                          />
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Backend order listing has no server filters yet, so filtering is client-side.
+                </p>
               </div>
-            )}
 
-            {/* ANALYTICS TAB */}
-            {activeTab === 'analytics' && (
-              <AnalyticsTab
-                analytics={analytics}
-                isLoading={contextLoading}
-                currency="NGN"
-              />
-            )}
+              {ordersLoading || merchandiseLoading ? (
+                <p className="text-sm text-slate-500 dark:text-slate-400">Loading merch orders...</p>
+              ) : filteredOrders.length === 0 ? (
+                <div className="rounded-3xl border border-dashed border-slate-200 p-12 text-center dark:border-slate-800">
+                  <p className="text-lg font-medium text-slate-900 dark:text-slate-100">No orders yet</p>
+                  <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                    Orders appear here once authenticated buyers create merch orders.
+                  </p>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-[0.3em] text-slate-400 dark:border-slate-800">
+                        <th className="px-4 py-3">Order</th>
+                        <th className="px-4 py-3">Buyer</th>
+                        <th className="px-4 py-3">Units</th>
+                        <th className="px-4 py-3">Status</th>
+                        <th className="px-4 py-3">Fulfillment</th>
+                        <th className="px-4 py-3">Total</th>
+                        <th className="px-4 py-3 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredOrders.map((order) => (
+                        <OrderRow key={order.id} order={order} onView={setSelectedOrder} />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </TabsContent>
 
-            {/* SETTINGS TAB */}
-            {activeTab === 'settings' && (
-              <SettingsTab
-                settings={settings}
-                onSave={handleSaveSettings}
-                isLoading={contextLoading}
-              />
-            )}
-          </div>
-        </div>
-        
-        {/* Product Modal */}
-        <ProductModal
-          isOpen={showProductModal}
-          onClose={() => {
-            setShowProductModal(false);
-            setEditingProduct(undefined);
-          }}
-          onSave={handleSaveProduct}
-          product={editingProduct}
-          eventCurrency="NGN"
-        />
-        
-        {/* Order Detail Modal */}
-        <OrderDetailModal
-          isOpen={showOrderModal}
-          onClose={() => {
-            setShowOrderModal(false);
-            setSelectedOrder(null);
-          }}
-          order={selectedOrder}
-          onFulfill={handleFulfillOrder}
-          onCancel={handleCancelOrder}
-          onRefund={handleRefundOrder}
-        />
+            <TabsContent value="analytics">
+              <AnalyticsTab analytics={analytics} isLoading={merchandiseLoading} currency={revenueCurrency} />
+            </TabsContent>
+
+            <TabsContent value="settings">
+              <SettingsTab settings={settings} onSave={updateSettings} isLoading={merchandiseLoading} />
+            </TabsContent>
+          </Tabs>
+        </section>
       </main>
+
+      <ProductModal
+        isOpen={showProductModal}
+        onClose={() => {
+          setShowProductModal(false);
+          setEditingProduct(undefined);
+        }}
+        onSave={handleSaveProduct}
+        product={editingProduct}
+      />
+
+      <OrderDetailModal
+        isOpen={!!selectedOrder}
+        onClose={() => setSelectedOrder(null)}
+        order={selectedOrder}
+        onUpdateFulfillment={handleUpdateFulfillment}
+      />
     </div>
   );
 };
 
-// Wrap with MerchandiseProvider
 export const MerchandiseManagement: React.FC<MerchandiseManagementProps> = (props) => {
   const eventId = getCurrentEventId();
+
   return (
     <MerchandiseProvider eventId={eventId}>
       <MerchandiseManagementContent {...props} />

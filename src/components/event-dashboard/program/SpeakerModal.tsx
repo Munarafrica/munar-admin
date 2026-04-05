@@ -3,7 +3,7 @@ import { Button } from '../../ui/button';
 import { Speaker } from '../types';
 import { X, Upload, User, Briefcase, Link as LinkIcon, Linkedin, Twitter, Globe, Star, Loader2 } from 'lucide-react';
 import { Switch } from '../../ui/switch';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 interface SpeakerModalProps {
   isOpen: boolean;

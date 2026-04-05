@@ -2,7 +2,7 @@
 // Core architectural component: parses event ID/slug and loads event core data
 
 import React, { useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import { EventProvider, useEvent } from '../contexts/EventContext';
 import { BrandProvider } from '../contexts/BrandContext';
 import { setCurrentEventId } from '../lib/event-storage';
@@ -33,7 +33,13 @@ interface EventResolverProps {
  */
 export function EventResolver({ children, useSlug }: EventResolverProps) {
   const params = useParams<{ eventId?: string; eventSlug?: string }>();
-  const eventIdentifier = useSlug ? params.eventSlug : params.eventId;
+  const [searchParams] = useSearchParams();
+  const isPreviewMode = searchParams.get('preview') === '1';
+  const previewEventId = searchParams.get('eventId');
+  const eventIdentifier = useSlug
+    ? (isPreviewMode && previewEventId ? previewEventId : params.eventSlug)
+    : params.eventId;
+  const resolveMode = useSlug && !(isPreviewMode && previewEventId) ? 'public-slug' : 'admin';
 
   // Sync event ID to localStorage for backward compatibility
   useEffect(() => {
@@ -47,7 +53,10 @@ export function EventResolver({ children, useSlug }: EventResolverProps) {
   }
 
   return (
-    <EventProvider eventId={eventIdentifier}>
+    <EventProvider
+      eventId={eventIdentifier}
+      resolveMode={resolveMode}
+    >
       <EventResolverInner>
         {children}
       </EventResolverInner>

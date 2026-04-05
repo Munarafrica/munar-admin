@@ -5,9 +5,12 @@ import React from 'react';
 import { RotateCcw } from 'lucide-react';
 import { WebsiteConfig, WebsiteTheme, WebsiteTemplateId, DEFAULT_THEME_HORIZON, DEFAULT_THEME_PULSE } from '../../../modules/website/types';
 import { cn } from '../../ui/utils';
+import { AssetLibraryRequestDetail, SingleImageField } from '../SingleImageField';
 
 interface DesignPanelProps {
   config: WebsiteConfig;
+  eventId?: string;
+  onOpenAssetLibrary?: (request: AssetLibraryRequestDetail) => void;
   onUpdateTheme: (theme: Partial<WebsiteTheme>) => void;
   onUpdateConfig: (updates: Partial<WebsiteConfig>) => void;
   onResetTheme: () => void;
@@ -101,7 +104,7 @@ const BODY_FONTS = [
   { value: 'system-ui', label: 'System UI' },
 ];
 
-export function DesignPanel({ config, onUpdateTheme, onUpdateConfig, onResetTheme }: DesignPanelProps) {
+export function DesignPanel({ config, eventId, onOpenAssetLibrary, onUpdateTheme, onUpdateConfig, onResetTheme }: DesignPanelProps) {
   const { theme } = config;
 
   return (
@@ -128,16 +131,27 @@ export function DesignPanel({ config, onUpdateTheme, onUpdateConfig, onResetThem
           <p className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-3">
             Logo
           </p>
+          <SingleImageField
+            value={config.logoAsset?.url || config.logoUrl}
+            asset={config.logoAsset}
+            onChange={(url) => onUpdateConfig({ logoUrl: url })}
+            onAssetChange={(asset) => onUpdateConfig({ logoAsset: asset, logoUrl: asset?.url })}
+            eventId={eventId}
+            category="logo"
+            aspectRatio="landscape"
+            placeholder="Upload logo image"
+            onOpenAssetLibrary={onOpenAssetLibrary}
+          />
           <input
             type="url"
             placeholder="Paste image URL (https://...)"
             value={config.logoUrl || ''}
             onChange={(e) => onUpdateConfig({ logoUrl: e.target.value })}
-            className="w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            className="mt-3 w-full text-xs px-3 py-2 rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 text-slate-700 dark:text-slate-300 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
           />
-          {config.logoUrl && (
+          {(config.logoAsset?.url || config.logoUrl) && (
             <div className="mt-2 rounded-lg bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 p-2 flex items-center justify-center h-12 overflow-hidden">
-              <img src={config.logoUrl} alt="Logo preview" className="max-h-full max-w-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              <img src={config.logoAsset?.url || config.logoUrl} alt="Logo preview" className="max-h-full max-w-full object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
             </div>
           )}
           <label className="flex items-center gap-2 mt-2 cursor-pointer">

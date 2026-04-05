@@ -1,13 +1,11 @@
-// Merchandise Context - manages merchandise state for an event
-import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
-import { Product, Order, MerchandiseAnalytics, FulfilmentConfig, MerchandiseSettings } from '../types/merchandise';
+import React, { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import type { MerchandiseAnalytics, MerchandiseSettings, Order, Product } from '../types/merchandise';
 import { merchandiseService } from '../services';
 
 interface MerchandiseContextState {
   products: Product[];
   orders: Order[];
   analytics: MerchandiseAnalytics | null;
-  fulfilmentConfig: FulfilmentConfig | null;
   settings: MerchandiseSettings | null;
   isLoading: boolean;
   error: string | null;
@@ -18,6 +16,7 @@ interface MerchandiseContextValue extends MerchandiseContextState {
   refreshProducts: () => Promise<void>;
   refreshOrders: () => Promise<void>;
   refreshAnalytics: () => Promise<void>;
+  refreshSettings: () => Promise<void>;
   updateSettings: (settings: Partial<MerchandiseSettings>) => Promise<void>;
   clearMerchandise: () => void;
 }
@@ -35,150 +34,137 @@ export function MerchandiseProvider({ children, eventId, autoLoad = true }: Merc
     products: [],
     orders: [],
     analytics: null,
-    fulfilmentConfig: null,
     settings: null,
     isLoading: false,
     error: null,
   });
 
   const loadMerchandise = useCallback(async (id: string) => {
-    setState(prev => ({ ...prev, isLoading: true, error: null }));
-    
+    if (!id) {
+      return;
+    }
+
+    setState((previous) => ({ ...previous, isLoading: true, error: null }));
+
     try {
-      // Load all merchandise data in parallel
-      const [products, ordersResponse, analytics, fulfilmentConfig, settings] = await Promise.all([
+      const [products, ordersResponse, analytics, settings] = await Promise.all([
         merchandiseService.getProducts(id),
         merchandiseService.getOrders(id),
         merchandiseService.getMerchandiseAnalytics(id),
-        merchandiseService.getFulfilmentConfig(id),
         merchandiseService.getMerchandiseSettings(id),
       ]);
-      
+
       setState({
         products,
         orders: ordersResponse.data,
         analytics,
-        fulfilmentConfig,
         settings,
         isLoading: false,
         error: null,
       });
-    } catch (err) {
-      setState(prev => ({
-        ...prev,
+    } catch (error) {
+      setState((previous) => ({
+        ...previous,
         isLoading: false,
-        error: err instanceof Error ? err.message : 'Failed to load merchandise',
+        error: error instanceof Error ? error.message : 'Failed to load merchandise',
       }));
     }
   }, []);
 
   const refreshProducts = useCallback(async () => {
-    if (!eventId) return;
-    
-    try {
-      const products = await merchandiseService.getProducts(eventId);
-      setState(prev => ({ ...prev, products }));
-    } catch (err) {
-      setState(prev => ({
-        ...prev,
-        error: err instanceof Error ? err.message : 'Failed to refresh products',
-      }));
+    if (!eventId) {
+      return;
     }
+
+    const products = await merchandiseService.getProducts(eventId);
+    setState((previous) => ({ ...previous, products }));
   }, [eventId]);
 
   const refreshOrders = useCallback(async () => {
-    if (!eventId) return;
-    
-    try {
-      const ordersResponse = await merchandiseService.getOrders(eventId);
-      setState(prev => ({ ...prev, orders: ordersResponse.data }));
-    } catch (err) {
-      setState(prev => ({
-        ...prev,
-        error: err instanceof Error ? err.message : 'Failed to refresh orders',
-      }));
+    if (!eventId) {
+      return;
     }
+
+    const orders = await merchandiseService.getOrders(eventId);
+    setState((previous) => ({ ...previous, orders: orders.data }));
   }, [eventId]);
 
   const refreshAnalytics = useCallback(async () => {
-    if (!eventId) return;
-    
-    try {
-      const analytics = await merchandiseService.getMerchandiseAnalytics(eventId);
-      setState(prev => ({ ...prev, analytics }));
-    } catch (err) {
-      setState(prev => ({
-        ...prev,
-        error: err instanceof Error ? err.message : 'Failed to refresh analytics',
-      }));
+    if (!eventId) {
+      return;
     }
+
+    const analytics = await merchandiseService.getMerchandiseAnalytics(eventId);
+    setState((previous) => ({ ...previous, analytics }));
   }, [eventId]);
+
+  const refreshSettings = useCallback(async () => {
+    if (!eventId) {
+      return;
+    }
+
+    const settings = await merchandiseService.getMerchandiseSettings(eventId);
+    setState((previous) => ({ ...previous, settings }));
+  }, [eventId]);
+
+  const updateSettings = useCallback(
+    async (nextSettings: Partial<MerchandiseSettings>) => {
+      if (!eventId) {
+        return;
+      }
+
+      const settings = await merchandiseService.updateMerchandiseSettings(eventId, nextSettings);
+      setState((previous) => ({ ...previous, settings }));
+    },
+    [eventId],
+  );
 
   const clearMerchandise = useCallback(() => {
     setState({
       products: [],
       orders: [],
       analytics: null,
-      fulfilmentConfig: null,
       settings: null,
       isLoading: false,
       error: null,
     });
   }, []);
 
-  const updateSettings = useCallback(async (newSettings: Partial<MerchandiseSettings>) => {
-    if (!eventId) return;
-    
-    try {
-      const updatedSettings = await merchandiseService.updateMerchandiseSettings(eventId, newSettings);
-      setState(prev => ({ ...prev, settings: updatedSettings }));
-    } catch (err) {
-      setState(prev => ({
-        ...prev,
-        error: err instanceof Error ? err.message : 'Failed to update settings',
-      }));
-      throw err;
-    }
-  }, [eventId]);
-
-  // Auto-load on mount or eventId change
   useEffect(() => {
     if (autoLoad && eventId) {
       loadMerchandise(eventId);
     }
-  }, [eventId, autoLoad]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  const value: MerchandiseContextValue = {
-    ...state,
-    loadMerchandise,
-    refreshProducts,
-    refreshOrders,
-    refreshAnalytics,
-    updateSettings,
-    clearMerchandise,
-  };
+  }, [autoLoad, eventId, loadMerchandise]);
 
   return (
-    <MerchandiseContext.Provider value={value}>
+    <MerchandiseContext.Provider
+      value={{
+        ...state,
+        loadMerchandise,
+        refreshProducts,
+        refreshOrders,
+        refreshAnalytics,
+        refreshSettings,
+        updateSettings,
+        clearMerchandise,
+      }}
+    >
       {children}
     </MerchandiseContext.Provider>
   );
 }
 
-// Hook to use merchandise context
 export function useMerchandise() {
   const context = useContext(MerchandiseContext);
-  if (context === undefined) {
+
+  if (!context) {
     throw new Error('useMerchandise must be used within a MerchandiseProvider');
   }
+
   return context;
 }
 
-// HOC to wrap components with merchandise provider
-export function withMerchandise<P extends object>(
-  Component: React.ComponentType<P>,
-  eventId: string
-) {
+export function withMerchandise<P extends object>(Component: React.ComponentType<P>, eventId: string) {
   return function MerchandiseComponent(props: P) {
     return (
       <MerchandiseProvider eventId={eventId}>

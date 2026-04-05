@@ -200,7 +200,9 @@ export interface CreateTicketRequest {
   eventId: string;
   name: string;
   type: 'Single' | 'Group';
+  ticketKind?: 'SINGLE' | 'GROUP';
   groupSize?: number;
+  attendeesPerUnit?: number;
   isFree: boolean;
   price?: number;
   quantityTotal: number;
@@ -216,7 +218,7 @@ export interface CreateTicketRequest {
   refundPolicy: 'Refundable' | 'Non-refundable';
   requireAttendeeInfo: boolean;
   color?: string;
-  status?: 'Draft' | 'On Sale' | 'Sold Out' | 'Hidden';
+  status?: 'Draft' | 'On Sale' | 'Sold Out' | 'Pause';
   sortOrder?: number;
 }
 
@@ -309,6 +311,7 @@ export interface PublicTicket {
   description?: string;
   type: 'Single' | 'Group';
   groupSize?: number;
+  attendeesPerUnit?: number;
   isFree: boolean;
   price: number;
   available: number;
@@ -465,6 +468,10 @@ export interface BackendTicketTypeResponse {
   name: string;
   description: string | null;
   status: TicketTypeStatus;
+  visibility?: 'PUBLIC' | 'HIDDEN' | 'INVITE_ONLY';
+  ticketKind?: 'SINGLE' | 'GROUP';
+  groupSize?: number | null;
+  attendeesPerUnit?: number | null;
   priceMinor: number;
   currency: CurrencyCode;
   capacity: number | null;
@@ -482,6 +489,10 @@ export interface BackendTicketTypeResponse {
 export interface CreateBackendTicketTypeRequest {
   name: string;
   description?: string;
+  status?: TicketTypeStatus;
+  visibility?: 'PUBLIC' | 'HIDDEN' | 'INVITE_ONLY';
+  ticketKind?: 'SINGLE' | 'GROUP';
+  groupSize?: number;
   priceMinor: number;
   capacity?: number;
   minPerOrder?: number;

@@ -17,11 +17,44 @@ import {
   TicketOrderResponse,
   BackendTicketTypeResponse,
   PublicTicketsResponse,
+  PublishedWebsiteOverviewResponse,
 } from '../types/api';
 import { TicketType, Attendee } from '../components/event-dashboard/types';
 import { delay, mockTickets, mockAttendees, generateId } from './mock/data';
 
 const TICKET_ORDER_STORAGE_KEY = 'munar_active_ticket_order_id';
+
+function unwrapTicketListResponse(
+  payload: ApiResponse<BackendTicketTypeResponse[]> | ApiResponse<{ data: BackendTicketTypeResponse[] }>
+): BackendTicketTypeResponse[] {
+  const data = payload.data;
+
+  if (Array.isArray(data)) {
+    return data;
+  }
+
+  if (data && Array.isArray((data as { data?: BackendTicketTypeResponse[] }).data)) {
+    return (data as { data: BackendTicketTypeResponse[] }).data;
+  }
+
+  return [];
+}
+
+function unwrapTicketResponse(
+  payload: ApiResponse<BackendTicketTypeResponse> | ApiResponse<{ data: BackendTicketTypeResponse }>
+): BackendTicketTypeResponse {
+  const data = payload.data;
+
+  if (data && typeof data === 'object' && 'id' in data) {
+    return data as BackendTicketTypeResponse;
+  }
+
+  if (data && typeof data === 'object' && 'data' in data) {
+    return (data as { data: BackendTicketTypeResponse }).data;
+  }
+
+  throw new Error('Invalid ticket response payload');
+}
 
 function normalizeTicketStatus(status?: string): TicketType['status'] {
   switch (status) {
@@ -30,37 +63,122 @@ function normalizeTicketStatus(status?: string): TicketType['status'] {
     case 'SOLD_OUT':
       return 'Sold Out';
     case 'PAUSED':
+      return 'Pause';
     case 'CLOSED':
-      return 'Hidden';
+      return 'Pause';
     case 'DRAFT':
     default:
       return 'Draft';
   }
 }
 
-function toBackendTicketPayload(data: Omit<CreateTicketRequest, 'eventId'> | UpdateTicketRequest) {
+function toBackendTicketStatus(status?: TicketType['status']): 'DRAFT' | 'ACTIVE' | 'SOLD_OUT' | 'PAUSED' | undefined {
+  switch (status) {
+    case 'On Sale':
+      return 'ACTIVE';
+    case 'Sold Out':
+      return 'SOLD_OUT';
+    case 'Pause':
+      return 'PAUSED';
+    case 'Draft':
+      return 'DRAFT';
+    default:
+      return undefined;
+  }
+}
+
+function toBackendTicketVisibility(visibility?: TicketType['visibility']): 'PUBLIC' | 'HIDDEN' | 'INVITE_ONLY' | undefined {
+  switch (visibility) {
+    case 'Public':
+      return 'PUBLIC';
+    case 'Hidden':
+      return 'HIDDEN';
+    case 'Invite Only':
+      return 'INVITE_ONLY';
+    default:
+      return undefined;
+  }
+}
+
+function fromBackendTicketVisibility(
+  visibility?: string,
+  accessRules?: Record<string, any>,
+): TicketType['visibility'] {
+  switch (visibility) {
+    case 'PUBLIC':
+      return 'Public';
+    case 'HIDDEN':
+      return 'Hidden';
+    case 'INVITE_ONLY':
+      return 'Invite Only';
+    default:
+      return accessRules?.visibility === 'Hidden' || accessRules?.isHidden === true
+        ? 'Hidden'
+        : accessRules?.visibility === 'Invite Only'
+          ? 'Invite Only'
+          : accessRules?.allowedAudience === 'public' || accessRules?.allowedAudience == null
+            ? 'Public'
+            : 'Invite Only';
+  }
+}
+
+function toDateTimeLocalValue(value?: string | null): string {
+  if (!value) return '';
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function toIsoDateTime(value?: string): string | undefined {
+  if (!value) return undefined;
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return undefined;
+  }
+
+  return date.toISOString();
+}
+
+function toBackendTicketPayload(data: Omit<CreateTicketRequest, 'eventId'> | UpdateTicketRequest): CreateBackendTicketTypeRequest {
   const capacity =
     typeof data.quantityTotal === 'number' && !data.quantityUnlimited
       ? data.quantityTotal
       : undefined;
+  const ticketKind = data.ticketKind || (data.type === 'Group' ? 'GROUP' : 'SINGLE');
+  const groupSize = ticketKind === 'GROUP' && typeof data.groupSize === 'number'
+    ? data.groupSize
+    : undefined;
 
   return {
     name: data.name,
     description: data.description,
+    status: toBackendTicketStatus(data.status),
+    visibility: toBackendTicketVisibility(data.visibility),
+    ticketKind,
+    ...(groupSize ? { groupSize } : {}),
     priceMinor: data.isFree ? 0 : Math.round((data.price || 0) * 100),
     capacity,
     minPerOrder: data.minPerOrder,
     maxPerOrder: data.maxPerOrder,
-    saleStartsAt: data.salesStart || undefined,
-    saleEndsAt: data.salesEnd || undefined,
+    saleStartsAt: toIsoDateTime(data.salesStart),
+    saleEndsAt: toIsoDateTime(data.salesEnd),
     accessRulesJson: {
       visibility: data.visibility,
       allowTransfer: data.allowTransfer,
       allowResale: data.allowResale,
       refundPolicy: data.refundPolicy,
       perks: data.perks || [],
-      type: data.type,
-      groupSize: data.groupSize,
       requireAttendeeInfo: data.requireAttendeeInfo,
     },
     customQuestionsJson: undefined as Record<string, unknown> | undefined,
@@ -70,30 +188,45 @@ function toBackendTicketPayload(data: Omit<CreateTicketRequest, 'eventId'> | Upd
 function fromBackendTicket(ticket: BackendTicketTypeResponse): TicketType {
   const accessRules = (ticket.accessRulesJson || {}) as Record<string, any>;
   const quantityTotal = ticket.capacity ?? ticket.soldCount;
+  const ticketKind = ticket.ticketKind === 'GROUP' ? 'GROUP' : 'SINGLE';
+  const type: TicketType['type'] = ticketKind === 'GROUP' ? 'Group' : 'Single';
+  const attendeesPerUnit = ticket.attendeesPerUnit ?? ticket.groupSize ?? 1;
+  const visibility = fromBackendTicketVisibility(ticket.visibility, accessRules);
+  const perks = Array.isArray(accessRules.perks)
+    ? accessRules.perks
+        .filter((perk): perk is { id?: unknown; name?: unknown } => Boolean(perk) && typeof perk === 'object')
+        .map((perk, index) => ({
+          id: typeof perk.id === 'string' && perk.id.length > 0 ? perk.id : `perk-${ticket.id}-${index}`,
+          name: typeof perk.name === 'string' ? perk.name : '',
+        }))
+        .filter((perk) => perk.name.trim().length > 0)
+    : [];
 
   return {
     eventId: ticket.eventId,
     id: ticket.id,
     name: ticket.name,
-    type: accessRules.type === 'Group' ? 'Group' : 'Single',
-    groupSize: accessRules.groupSize,
+    type,
+    ticketKind,
+    groupSize: ticketKind === 'GROUP' ? (ticket.groupSize ?? attendeesPerUnit) : undefined,
+    attendeesPerUnit,
     isFree: ticket.priceMinor === 0,
     price: ticket.priceMinor / 100,
     quantitySold: ticket.soldCount,
     quantityTotal,
     quantityUnlimited: ticket.capacity == null,
     status: normalizeTicketStatus(ticket.status),
-    salesStart: ticket.saleStartsAt || '',
-    salesEnd: ticket.saleEndsAt || '',
+    salesStart: toDateTimeLocalValue(ticket.saleStartsAt),
+    salesEnd: toDateTimeLocalValue(ticket.saleEndsAt),
     minPerOrder: ticket.minPerOrder ?? 1,
     maxPerOrder: ticket.maxPerOrder ?? 10,
-    visibility: accessRules.visibility || 'Public',
+    visibility,
     description: ticket.description || undefined,
-    perks: Array.isArray(accessRules.perks) ? accessRules.perks : [],
-    allowTransfer: !!accessRules.allowTransfer,
-    allowResale: !!accessRules.allowResale,
-    refundPolicy: accessRules.refundPolicy || 'Non-refundable',
-    requireAttendeeInfo: !!accessRules.requireAttendeeInfo,
+    perks,
+    allowTransfer: accessRules.allowTransfer === true,
+    allowResale: accessRules.allowResale === true,
+    refundPolicy: accessRules.refundPolicy === 'Refundable' ? 'Refundable' : 'Non-refundable',
+    requireAttendeeInfo: accessRules.requireAttendeeInfo === true,
   };
 }
 
@@ -157,6 +290,7 @@ function buildPublicTicketsResponse(
       description: ticket.description,
       type: ticket.type,
       groupSize: ticket.groupSize,
+      attendeesPerUnit: ticket.attendeesPerUnit,
       isFree: ticket.isFree,
       price: ticket.price || 0,
       available: Math.max(0, (ticket.quantityTotal || 0) - (ticket.quantitySold || 0)),
@@ -180,11 +314,11 @@ class TicketsService {
       await delay(400);
       return mockTickets.filter(t => t.eventId === eventId);
     }
-    const response = await apiClient.get<ApiResponse<BackendTicketTypeResponse[]>>(
+    const response = await apiClient.get<ApiResponse<BackendTicketTypeResponse[]> | ApiResponse<{ data: BackendTicketTypeResponse[] }>>(
       `/events/${eventId}/ticket-types`,
       { params: params as Record<string, string | number | boolean | undefined> },
     );
-    return response.data.map(fromBackendTicket);
+    return unwrapTicketListResponse(response).map(fromBackendTicket);
   }
 
   async getTicket(eventId: string, ticketId: string): Promise<TicketType> {
@@ -194,8 +328,8 @@ class TicketsService {
       if (!ticket) throw new Error('Ticket not found');
       return ticket;
     }
-    const response = await apiClient.get<ApiResponse<BackendTicketTypeResponse>>(`/ticket-types/${ticketId}`);
-    return fromBackendTicket(response.data);
+    const response = await apiClient.get<ApiResponse<BackendTicketTypeResponse> | ApiResponse<{ data: BackendTicketTypeResponse }>>(`/ticket-types/${ticketId}`);
+    return fromBackendTicket(unwrapTicketResponse(response));
   }
 
   async createTicket(eventId: string, data: Omit<CreateTicketRequest, 'eventId'>): Promise<TicketType> {
@@ -206,7 +340,9 @@ class TicketsService {
         id: generateId('t'),
         name: data.name,
         type: data.type,
+        ticketKind: data.ticketKind,
         groupSize: data.groupSize,
+        attendeesPerUnit: data.attendeesPerUnit,
         isFree: data.isFree,
         price: data.price,
         quantitySold: 0,
@@ -227,11 +363,11 @@ class TicketsService {
       mockTickets.push(newTicket);
       return newTicket;
     }
-    const response = await apiClient.post<ApiResponse<BackendTicketTypeResponse>>(
+    const response = await apiClient.post<ApiResponse<BackendTicketTypeResponse> | ApiResponse<{ data: BackendTicketTypeResponse }>>(
       `/events/${eventId}/ticket-types`,
       toBackendTicketPayload(data),
     );
-    return fromBackendTicket(response.data);
+    return fromBackendTicket(unwrapTicketResponse(response));
   }
 
   async updateTicket(eventId: string, ticketId: string, data: UpdateTicketRequest): Promise<TicketType> {
@@ -242,21 +378,23 @@ class TicketsService {
       mockTickets[index] = { ...mockTickets[index], ...data } as TicketType;
       return mockTickets[index];
     }
-    const response = await apiClient.patch<ApiResponse<BackendTicketTypeResponse>>(
+    const response = await apiClient.patch<ApiResponse<BackendTicketTypeResponse> | ApiResponse<{ data: BackendTicketTypeResponse }>>(
       `/ticket-types/${ticketId}`,
       toBackendTicketPayload(data),
     );
-    return fromBackendTicket(response.data);
+    return fromBackendTicket(unwrapTicketResponse(response));
   }
 
-  async deleteTicket(eventId: string, ticketId: string): Promise<MutationResponse> {
+  async deleteTicket(eventId: string, ticketId: string): Promise<TicketType> {
     if (config.features.useMockData) {
       await delay(400);
       const index = mockTickets.findIndex(t => t.id === ticketId);
-      if (index !== -1) mockTickets.splice(index, 1);
-      return { success: true, message: 'Ticket deleted successfully' };
+      if (index === -1) throw new Error('Ticket not found');
+      const [deletedTicket] = mockTickets.splice(index, 1);
+      return deletedTicket;
     }
-    return apiClient.delete<MutationResponse>(`/ticket-types/${ticketId}`);
+    const response = await apiClient.delete<ApiResponse<{ data: BackendTicketTypeResponse }>>(`/ticket-types/${ticketId}`);
+    return fromBackendTicket(unwrapTicketResponse(response));
   }
 
   async duplicateTicket(eventId: string, ticketId: string): Promise<TicketType> {
@@ -487,8 +625,8 @@ class TicketsService {
         mockTickets.filter((ticket) => ticket.eventId === 'evt-1'),
       );
     }
-    const eventResponse = await apiClient.get<ApiResponse<any>>(`/public/events/${slug}/website`);
-    const event = eventResponse.data.event;
+    const eventResponse = await apiClient.get<PublishedWebsiteOverviewResponse>(`/public/events/${slug}/website`);
+    const event = eventResponse.event;
     const tickets = await this.getTickets(event.id, { status: 'ACTIVE' });
     return buildPublicTicketsResponse(
       {

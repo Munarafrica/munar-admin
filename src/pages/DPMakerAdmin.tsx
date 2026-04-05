@@ -4,7 +4,7 @@ import { Page, DPFrame, PhotoPlaceholder, TextPlaceholder, PlaceholderShape, Tex
 import { Button } from '../components/ui/button';
 import { ArrowLeft, Upload, Circle, Square, Eye, Save, AlertCircle, X, Menu, Hexagon, Star, Heart, Link as LinkIcon, ExternalLink, Copy } from 'lucide-react';
 import { cn } from '../components/ui/utils';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { drawShape, createShapeClipPath } from '../utils/canvas-shapes';
 import { eventsService } from '../services';
 import { getCurrentEventId } from '../lib/event-storage';

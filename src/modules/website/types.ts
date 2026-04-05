@@ -5,6 +5,27 @@
 export type WebsiteTemplateId = 'horizon' | 'pulse';
 export type WebsiteStatus = 'draft' | 'published';
 export type AccessControl = 'public' | 'password' | 'private';
+export type PreviewBreakpoint = 'desktop' | 'tablet' | 'mobile';
+export type WebsiteAssetCategory = 'hero' | 'section' | 'logo' | 'gallery' | 'seo' | 'custom-block';
+
+export interface WebsiteAssetRef {
+  assetId: string;
+  url: string;
+  altText?: string;
+  width?: number;
+  height?: number;
+}
+
+export interface HeroOverlayConfig {
+  enabled?: boolean;
+  style?: 'solid' | 'gradient';
+  color?: string;
+  secondaryColor?: string;
+  opacity?: number;
+  secondaryOpacity?: number;
+  direction?: string;
+  blendMode?: React.CSSProperties['mixBlendMode'];
+}
 
 // Standard section types (built-in sections)
 // 'custom' is a special marker for where custom blocks are rendered in the template
@@ -83,6 +104,52 @@ export interface SectionOverrides {
   secondaryButtonUrl?: string;
   /** Custom description/intro text */
   description?: string;
+  /** Uploaded hero image reference */
+  heroImage?: WebsiteAssetRef;
+  /** Uploaded generic background image reference */
+  backgroundImage?: WebsiteAssetRef;
+  /** Optional icon or supporting section image */
+  iconImage?: WebsiteAssetRef;
+  /** Custom hero overlay controls */
+  heroOverlay?: HeroOverlayConfig;
+  /** Preferred render order for editable elements inside a section */
+  elementOrder?: string[];
+  /** Editable template elements hidden from the rendered section */
+  hiddenElementIds?: string[];
+  /** Section-level layout controls for on-canvas editing */
+  layout?: {
+    paddingTop?: string;
+    paddingBottom?: string;
+    contentAlign?: 'left' | 'center' | 'right';
+    contentMaxWidth?: string;
+    backgroundColor?: string;
+  };
+  /** Per-text styling overrides used by inline preview editing */
+  styles?: Partial<Record<EditableTextField, TextStyle>>;
+}
+
+export type EditableTextField = 'heading' | 'subheading' | 'description' | 'buttonText';
+
+export interface TextStyleValues {
+  color?: string;
+  fontSize?: string;
+  fontFamily?: string;
+  fontWeight?: string;
+  textAlign?: 'left' | 'center' | 'right';
+  letterSpacing?: string;
+  lineHeight?: string;
+  backgroundColor?: string;
+  padding?: string;
+  borderRadius?: string;
+  maxWidth?: string;
+  marginTop?: string;
+  marginBottom?: string;
+  offsetX?: number;
+  offsetY?: number;
+}
+
+export interface TextStyle extends TextStyleValues {
+  responsive?: Partial<Record<PreviewBreakpoint, Partial<TextStyleValues>>>;
 }
 
 export interface SectionConfig {
@@ -195,6 +262,7 @@ export interface WebsiteConfig {
     title: string;
     description: string;
     socialImage?: string;
+    socialImageAsset?: WebsiteAssetRef;
   };
   slug?: string;
   accessControl: AccessControl;
@@ -202,6 +270,8 @@ export interface WebsiteConfig {
   lastSaved?: string;
   /** Custom logo URL shown in the website navbar */
   logoUrl?: string;
+  /** Uploaded logo asset reference shown in the navbar */
+  logoAsset?: WebsiteAssetRef;
   /** Whether the sticky navbar is shown */
   navbarEnabled?: boolean;
   /** 
@@ -279,6 +349,7 @@ export interface WebsitePreviewMessage {
   type: 'WEBSITE_PREVIEW_CONFIG';
   config: WebsiteConfig;
   eventSlug: string;
+  previewMode?: PreviewBreakpoint;
   /** Highlights the given section in the live preview */
   selectedSectionId?: SectionId | null;
 }
@@ -291,4 +362,22 @@ export interface WebsitePreviewReadyMessage {
 export interface WebsiteSectionClickMessage {
   type: 'WEBSITE_SECTION_CLICK';
   sectionId: SectionId;
+}
+
+export interface WebsitePreviewConfigUpdateMessage {
+  type: 'WEBSITE_PREVIEW_CONFIG_UPDATE';
+  updates: Partial<WebsiteConfig>;
+}
+
+export interface WebsitePreviewEditableSelectMessage {
+  type: 'WEBSITE_PREVIEW_EDITABLE_SELECT';
+  selection: {
+    sectionId: SectionId;
+    field: EditableTextField;
+    value: string;
+    multiline?: boolean;
+    elementId?: string;
+    elementLabel?: string;
+    defaultElementOrder?: string[];
+  };
 }

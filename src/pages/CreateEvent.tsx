@@ -7,6 +7,7 @@ import { cn } from "../components/ui/utils";
 import { RichTextEditor } from "../components/ui/RichTextEditor";
 import { eventsService } from "../services";
 import { setCurrentEventId } from "../lib/event-storage";
+import { toast } from "sonner";
 
 interface CreateEventProps {
   onClose?: () => void;
@@ -240,6 +241,15 @@ export const CreateEvent = ({ onClose, onContinue, onNavigate }: CreateEventProp
       if (typeof window !== "undefined") {
         window.localStorage.removeItem("munar_event_form");
       }
+
+      toast.success("Event created", {
+        description: `${formData.eventName} is ready for setup.`,
+        style: {
+          borderColor: 'rgba(99, 102, 241, 0.24)',
+          background: 'linear-gradient(180deg, rgba(238,242,255,0.98), rgba(255,255,255,0.98))',
+          color: '#312e81',
+        },
+      });
 
       onContinue?.();
     } catch (error: any) {

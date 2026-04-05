@@ -3,7 +3,7 @@ import { DPFrame } from '../components/event-dashboard/types';
 import { Button } from '../components/ui/button';
 import { Upload, Download, RefreshCw, Instagram, Facebook, Twitter, MessageCircle, ZoomIn, ZoomOut } from 'lucide-react';
 import { cn } from '../components/ui/utils';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { Page } from '../App';
 import { createShapeClipPath, drawShape } from '../utils/canvas-shapes';
 

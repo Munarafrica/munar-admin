@@ -16,6 +16,7 @@ import React from 'react';
 import { Outlet } from 'react-router-dom';
 import { ThemeProvider } from './theme-provider';
 import { AuthProvider } from '../contexts';
+import { Toaster } from './ui/sonner';
 
 interface AppShellProps {
   children?: React.ReactNode;
@@ -36,6 +37,15 @@ export function AppShell({ children }: AppShellProps) {
       <AuthProvider>
         <div className="text-slate-900 dark:text-foreground bg-background antialiased selection:bg-purple-100 selection:text-purple-900">
           {children || <Outlet />}
+          <Toaster
+            position="top-right"
+            toastOptions={{
+              style: {
+                borderColor: 'rgba(99, 102, 241, 0.24)',
+                boxShadow: '0 12px 30px rgba(15, 23, 42, 0.12)',
+              },
+            }}
+          />
         </div>
       </AuthProvider>
     </ThemeProvider>

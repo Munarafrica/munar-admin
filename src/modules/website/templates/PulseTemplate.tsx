@@ -4,7 +4,7 @@
 // Features: Dynamic section ordering, theme-aware buttons, scroll animations, custom blocks
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Calendar, MapPin, Clock, Ticket, Vote, ShoppingBag, FileText,
   Image, Users, Mic, ChevronRight, ExternalLink, Zap, ChevronUp,
@@ -12,12 +12,26 @@ import {
 } from 'lucide-react';
 import { EventData, Speaker, Session } from '../../../components/event-dashboard/types';
 import { Sponsor } from '../../../types/sponsors';
-import { WebsiteConfig, SectionId, CustomBlock } from '../types';
+import { EditableTextField, SectionId, SectionOverrides, WebsiteConfig, CustomBlock, TextStyleValues, WebsitePreviewEditableSelectMessage } from '../types';
 import { cn } from '../../../components/ui/utils';
 import {
   getRadius, getButtonStyle, getButtonClasses, sectionStyle,
   GALLERY_PLACEHOLDER_IMAGES,
 } from './helpers';
+import { PreviewEditableText } from '../components/PreviewEditableText';
+import { PreviewSectionFrame } from '../components/PreviewSectionFrame';
+
+function hexToRgba(hex: string, opacity: number) {
+  const safeHex = hex.replace('#', '');
+  const normalized = safeHex.length === 3
+    ? safeHex.split('').map((char) => char + char).join('')
+    : safeHex.padEnd(6, '0').slice(0, 6);
+  const value = Number.parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
 
 // ── Social icons (inline SVG for footer) ────────────────────────────────────
 const SocialIcon = ({ type, url, color }: { type: string; url: string; color: string }) => {
@@ -80,28 +94,240 @@ interface PulseTemplateProps {
   sponsors?: Sponsor[];
   onSectionClick?: (id: SectionId) => void;
   selectedSection?: SectionId | null;
+  isPreviewMode?: boolean;
+  activeBreakpoint?: 'desktop' | 'tablet' | 'mobile';
+  onSectionOverrideUpdate?: (sectionId: SectionId, overrides: SectionOverrides) => void;
+  onSectionReorder?: (sectionId: SectionId, direction: 'up' | 'down') => void;
 }
 
 // ── Main Template ───────────────────────────────────────────────────────────
 
 export function PulseTemplate({
   event, config, speakers = [], sessions = [], sponsors = [],
-  onSectionClick, selectedSection,
+  onSectionClick, selectedSection, isPreviewMode, activeBreakpoint, onSectionOverrideUpdate, onSectionReorder,
 }: PulseTemplateProps) {
   const { eventSlug } = useParams<{ eventSlug: string }>();
+  const [searchParams] = useSearchParams();
   const slug = eventSlug || event.slug || event.id;
+  const isPreviewRoute = searchParams.get('preview') === '1';
+  const previewEnabled = isPreviewMode ?? isPreviewRoute;
+  const previewSuffix = previewEnabled ? `?preview=1&eventId=${encodeURIComponent(event.id)}` : '';
+  const ticketsUrl = `/e/${slug}/tickets${previewSuffix}`;
   const { theme } = config;
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [draggedBlockId, setDraggedBlockId] = useState<string | null>(null);
 
   const visibleSections = [...config.sections]
     .filter((s) => s.visible)
     .sort((a, b) => a.order - b.order);
+  const getOverrides = (id: SectionId) => config.sections.find((section) => section.id === id)?.overrides || {};
 
   const isVisible = (id: SectionId) => visibleSections.some((s) => s.id === id);
+  const visibleSectionIds = visibleSections.map((section) => section.id);
+  const sectionIndex = (id: SectionId) => visibleSectionIds.indexOf(id);
+  const getSectionSpacingStyle = (id: SectionId): React.CSSProperties => {
+    const layout = getOverrides(id).layout;
+    return {
+      ...(layout?.paddingTop ? { paddingTop: layout.paddingTop } : {}),
+      ...(layout?.paddingBottom ? { paddingBottom: layout.paddingBottom } : {}),
+    };
+  };
+  const getSectionContentStyle = (id: SectionId): React.CSSProperties => {
+    const layout = getOverrides(id).layout;
+    const align = layout?.contentAlign || 'center';
+    return {
+      ...(layout?.contentMaxWidth ? { maxWidth: layout.contentMaxWidth, width: '100%' } : {}),
+      ...(align === 'left' ? { marginLeft: 0, marginRight: 'auto' } : {}),
+      ...(align === 'center' ? { marginLeft: 'auto', marginRight: 'auto' } : {}),
+      ...(align === 'right' ? { marginLeft: 'auto', marginRight: 0 } : {}),
+    };
+  };
+  const getFieldStyleValues = (sectionId: SectionId, field: EditableTextField): Partial<TextStyleValues> => {
+    const styleMap = getOverrides(sectionId).styles || {};
+    const fieldStyle = styleMap[field] || {};
+    const responsive = activeBreakpoint && activeBreakpoint !== 'desktop'
+      ? fieldStyle.responsive?.[activeBreakpoint] || {}
+      : {};
+
+    return {
+      ...fieldStyle,
+      ...responsive,
+    };
+  };
+  const emitEditableSelection = (selection: WebsitePreviewEditableSelectMessage['selection']) => {
+    if (!previewEnabled || typeof window === 'undefined' || !window.parent || window.parent === window) return;
+    const message: WebsitePreviewEditableSelectMessage = {
+      type: 'WEBSITE_PREVIEW_EDITABLE_SELECT',
+      selection,
+    };
+    window.parent.postMessage(message, '*');
+  };
+  const getEditableButtonStyle = (sectionId: SectionId, baseStyle: React.CSSProperties = {}): React.CSSProperties => {
+    const buttonStyle = getFieldStyleValues(sectionId, 'buttonText');
+    return {
+      ...baseStyle,
+      ...(buttonStyle.backgroundColor ? { backgroundColor: buttonStyle.backgroundColor } : {}),
+      ...(buttonStyle.color ? { color: buttonStyle.color } : {}),
+      ...(buttonStyle.borderRadius ? { borderRadius: buttonStyle.borderRadius } : {}),
+      ...(buttonStyle.padding ? { padding: buttonStyle.padding } : {}),
+      ...(buttonStyle.fontFamily ? { fontFamily: buttonStyle.fontFamily } : {}),
+      ...(buttonStyle.fontWeight ? { fontWeight: buttonStyle.fontWeight } : {}),
+      ...(buttonStyle.fontSize ? { fontSize: buttonStyle.fontSize } : {}),
+      ...(buttonStyle.letterSpacing ? { letterSpacing: buttonStyle.letterSpacing } : {}),
+      ...(buttonStyle.lineHeight ? { lineHeight: buttonStyle.lineHeight } : {}),
+      ...(buttonStyle.marginTop ? { marginTop: buttonStyle.marginTop } : {}),
+      ...(buttonStyle.marginBottom ? { marginBottom: buttonStyle.marginBottom } : {}),
+    };
+  };
+  const getEditableButtonProps = (
+    _sectionId: SectionId,
+    selection: WebsitePreviewEditableSelectMessage['selection'],
+  ) => ({
+    onClick: (event: React.MouseEvent<HTMLElement>) => {
+      event.stopPropagation();
+      if (previewEnabled) {
+        event.preventDefault();
+        emitEditableSelection(selection);
+      }
+    },
+  });
 
   const handleClick = (id: SectionId) => {
     if (onSectionClick) onSectionClick(id);
   };
+  const getHeroOverlayStyle = (overrides: SectionOverrides): React.CSSProperties => {
+    const overlay = overrides.heroOverlay;
+    if (!overlay || overlay.enabled === false) {
+      return { background: `linear-gradient(to top, ${theme.backgroundColor} 0%, ${theme.backgroundColor}88 30%, transparent 70%)` };
+    }
+
+    const primary = hexToRgba(overlay.color || '#020617', overlay.opacity ?? 0.72);
+    const secondary = hexToRgba(overlay.secondaryColor || overlay.color || '#0f172a', overlay.secondaryOpacity ?? 0.28);
+
+    return {
+      background: overlay.style === 'solid'
+        ? primary
+        : `linear-gradient(${overlay.direction || 'to top'}, ${primary} 0%, ${secondary} 55%, transparent 100%)`,
+      mixBlendMode: overlay.blendMode || 'normal',
+    };
+  };
+
+  const editableText = (
+    sectionId: SectionId,
+    field: EditableTextField,
+    value: string,
+    options: {
+      as?: keyof React.JSX.IntrinsicElements;
+      className?: string;
+      style?: React.CSSProperties;
+      multiline?: boolean;
+      elementId?: string;
+      elementLabel?: string;
+      defaultElementOrder?: string[];
+    } = {},
+  ) => (
+    <PreviewEditableText
+      as={options.as}
+      className={options.className}
+      style={options.style}
+      multiline={options.multiline}
+      sectionId={sectionId}
+      elementId={options.elementId}
+      elementLabel={options.elementLabel}
+      defaultElementOrder={options.defaultElementOrder}
+      field={field}
+      value={value}
+      isPreviewMode={previewEnabled}
+      activeBreakpoint={activeBreakpoint}
+      overrides={getOverrides(sectionId)}
+      onUpdate={(id, overrides) => onSectionOverrideUpdate?.(id, overrides)}
+    />
+  );
+
+  const getOrderedElementIds = (sectionId: SectionId, defaultOrder: string[]) => {
+    const saved = (getOverrides(sectionId).elementOrder || []).filter((id) => defaultOrder.includes(id));
+    return [...saved, ...defaultOrder.filter((id) => !saved.includes(id))];
+  };
+
+  const updateElementOrder = (sectionId: SectionId, nextOrder: string[]) => {
+    const currentOverrides = getOverrides(sectionId);
+    onSectionOverrideUpdate?.(sectionId, {
+      ...currentOverrides,
+      elementOrder: nextOrder,
+    });
+  };
+
+  const renderOrderedElements = (
+    sectionId: SectionId,
+    items: Array<{ id: string; node: React.ReactNode }>
+  ) => {
+    const itemMap = new Map(items.map((item) => [item.id, item.node] as const));
+    const orderedIds = getOrderedElementIds(sectionId, items.map((item) => item.id));
+    const hiddenElementIds = getOverrides(sectionId).hiddenElementIds || [];
+
+    return orderedIds
+      .filter((id) => !hiddenElementIds.includes(id))
+      .map((id) => (
+      <div
+        key={id}
+        draggable={previewEnabled && selectedSection === sectionId}
+        onDragStart={(event) => {
+          if (!(previewEnabled && selectedSection === sectionId)) return;
+          event.stopPropagation();
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', id);
+          setDraggedBlockId(id);
+        }}
+        onDragEnd={() => setDraggedBlockId(null)}
+        onDragOver={(event) => {
+          if (!(previewEnabled && selectedSection === sectionId)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = 'move';
+        }}
+        onDrop={(event) => {
+          if (!(previewEnabled && selectedSection === sectionId)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const fromId = event.dataTransfer.getData('text/plain') || draggedBlockId;
+          if (!fromId || fromId === id) {
+            setDraggedBlockId(null);
+            return;
+          }
+          const fromIndex = orderedIds.indexOf(fromId);
+          const toIndex = orderedIds.indexOf(id);
+          if (fromIndex === -1 || toIndex === -1) {
+            setDraggedBlockId(null);
+            return;
+          }
+          const nextOrder = [...orderedIds];
+          const [moved] = nextOrder.splice(fromIndex, 1);
+          nextOrder.splice(toIndex, 0, moved);
+          updateElementOrder(sectionId, nextOrder);
+          setDraggedBlockId(null);
+        }}
+        className={`relative ${draggedBlockId === id ? 'opacity-50' : ''}`}
+      >
+        {itemMap.get(id) || null}
+      </div>
+    ));
+  };
+
+  const withSectionFrame = (sectionId: SectionId, child: React.ReactNode) => (
+    <PreviewSectionFrame
+      sectionId={sectionId}
+      isPreviewMode={previewEnabled}
+      isSelected={selectedSection === sectionId}
+      canMoveUp={sectionIndex(sectionId) > 0}
+      canMoveDown={sectionIndex(sectionId) > -1 && sectionIndex(sectionId) < visibleSectionIds.length - 1}
+      overrides={getOverrides(sectionId)}
+      onSelect={handleClick}
+      onUpdate={(id, overrides) => onSectionOverrideUpdate?.(id, overrides)}
+      onReorder={onSectionReorder}
+    >
+      {child}
+    </PreviewSectionFrame>
+  );
 
   // Dark-theme button style: primary color bg, dark text
   const btnStyle = (color: string) => getButtonStyle(theme, color, theme.backgroundColor);
@@ -118,24 +344,60 @@ export function PulseTemplate({
 
   const renderAbout = () => (
     (event.description || event.type) ? (
+      (() => {
+        const overrides = getOverrides('about');
+        return withSectionFrame('about', (
       <AnimatedSection
         key="about"
         id="about"
         onClick={() => handleClick('about')}
         className={cn('py-20 max-w-6xl mx-auto px-6 sm:px-10', sectionStyle(selectedSection === 'about', 'dark'))}
+        style={getSectionSpacingStyle('about')}
       >
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-14 items-start">
+        <div className="grid grid-cols-1 gap-14 items-start md:grid-cols-2" style={getSectionContentStyle('about')}>
           <div>
-            <div className="w-10 h-1 mb-6 rounded-full" style={{ backgroundColor: theme.primaryColor }} />
-            <h2 className="text-4xl font-black mb-6 leading-tight" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>
-              About the <br />
-              <span style={{ color: theme.primaryColor }}>Event</span>
-            </h2>
-            {event.description ? (
-              <p className="text-slate-300 leading-relaxed text-base">{event.description}</p>
-            ) : (
-              <p className="text-slate-500 italic">Event description goes here.</p>
-            )}
+            {renderOrderedElements('about', [
+              {
+                id: 'accent',
+                node: <div className="w-10 h-1 mb-6 rounded-full" style={{ backgroundColor: theme.primaryColor }} />,
+              },
+              {
+                id: 'heading',
+                node: editableText('about', 'heading', overrides.heading || 'About the Event', {
+                  as: 'h2',
+                  className: 'text-4xl font-black mb-6 leading-tight',
+                  style: { fontFamily: theme.headingFont + ', sans-serif' },
+                  elementId: 'heading',
+                  elementLabel: 'About Heading',
+                  defaultElementOrder: ['accent', 'heading', 'description', 'subheading'],
+                }),
+              },
+              {
+                id: 'description',
+                node: (overrides.description || event.description) ? (
+                  editableText('about', 'description', overrides.description || event.description || '', {
+                    as: 'p',
+                    className: 'text-slate-300 leading-relaxed text-base',
+                    multiline: true,
+                    elementId: 'description',
+                    elementLabel: 'About Description',
+                    defaultElementOrder: ['accent', 'heading', 'description', 'subheading'],
+                  })
+                ) : (
+                  <p className="text-slate-500 italic">Event description goes here.</p>
+                ),
+              },
+              {
+                id: 'subheading',
+                node: overrides.subheading ? editableText('about', 'subheading', overrides.subheading, {
+                  as: 'p',
+                  className: 'text-slate-400 mt-4',
+                  elementId: 'subheading',
+                  elementLabel: 'About Subheading',
+                  defaultElementOrder: ['accent', 'heading', 'description', 'subheading'],
+                }) : null,
+              },
+            ])}
           </div>
           <div className="grid grid-cols-2 gap-4">
             {[
@@ -153,59 +415,144 @@ export function PulseTemplate({
           </div>
         </div>
       </AnimatedSection>
+        ));
+      })()
     ) : null
   );
 
   const renderTickets = () => (
+    (() => {
+      const overrides = getOverrides('tickets');
+      return withSectionFrame('tickets', (
     <AnimatedSection
       key="tickets"
       onClick={() => handleClick('tickets')}
       className={cn('py-20', sectionStyle(selectedSection === 'tickets', 'dark'))}
+      style={getSectionSpacingStyle('tickets')}
     >
-      <div className="max-w-6xl mx-auto px-6 sm:px-10">
-        <div className="flex items-end justify-between mb-10">
-          <div>
-            <div className="w-10 h-1 rounded-full mb-5" style={{ backgroundColor: theme.primaryColor }} />
-            <h2 className="text-4xl font-black" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>
-              Get Your <span style={{ color: theme.primaryColor }}>Tickets</span>
-            </h2>
-          </div>
-          <Link to={`/e/${slug}/tickets`} className="hidden sm:flex items-center gap-1 text-sm font-semibold hover:gap-2 transition-all" style={{ color: theme.primaryColor }} onClick={(e) => e.stopPropagation()}>
-            View all <ChevronRight className="w-4 h-4" />
-          </Link>
-        </div>
-        <div className="overflow-hidden p-8 sm:p-10 flex flex-col sm:flex-row items-center justify-between gap-8" style={{ background: `linear-gradient(135deg, ${theme.primaryColor}33 0%, ${theme.secondaryColor}22 100%)`, border: `1px solid ${theme.primaryColor}44`, borderRadius: getRadius(theme.borderRadius, 'lg') }}>
-          <div className="flex items-center gap-5">
-            <div className="w-16 h-16 flex items-center justify-center shadow-lg flex-shrink-0" style={{ backgroundColor: theme.primaryColor, borderRadius: getRadius(theme.borderRadius) }}>
-              <Ticket className="w-7 h-7" style={{ color: theme.backgroundColor }} />
-            </div>
-            <div>
-              <h3 className="font-black text-xl text-white">Reserve Your Place</h3>
-              <p className="text-slate-400 mt-1">Limited spots available — secure yours now</p>
-            </div>
-          </div>
-          <Link to={`/e/${slug}/tickets`} className={cn('flex-shrink-0 px-8 py-4 shadow-lg', btnClasses)} style={btnStyle(theme.primaryColor)} onClick={(e) => e.stopPropagation()}>
-            <Ticket className="w-4 h-4" /> Get Tickets
-          </Link>
-        </div>
+      <div className="max-w-6xl mx-auto px-6 sm:px-10" style={getSectionContentStyle('tickets')}>
+        {renderOrderedElements('tickets', [
+          {
+            id: 'header',
+            node: (
+              <div className="flex items-end justify-between mb-10">
+                <div>
+                  <div className="w-10 h-1 rounded-full mb-5" style={{ backgroundColor: theme.primaryColor }} />
+                  {editableText('tickets', 'heading', overrides.heading || 'Get Your Tickets', {
+                    as: 'h2',
+                    className: 'text-4xl font-black',
+                    style: { fontFamily: theme.headingFont + ', sans-serif' },
+                    elementId: 'header',
+                    elementLabel: 'Tickets Header',
+                    defaultElementOrder: ['header', 'card'],
+                  })}
+                  {overrides.subheading && editableText('tickets', 'subheading', overrides.subheading, {
+                    as: 'p',
+                    className: 'text-slate-400 mt-3',
+                    elementId: 'header',
+                    elementLabel: 'Tickets Header',
+                    defaultElementOrder: ['header', 'card'],
+                  })}
+                </div>
+                <Link to={ticketsUrl} className="hidden sm:flex items-center gap-1 text-sm font-semibold hover:gap-2 transition-all" style={{ color: theme.primaryColor }} onClick={(e) => e.stopPropagation()}>
+                  {editableText('tickets', 'description', overrides.description || 'View all', {
+                    as: 'span',
+                    elementId: 'header',
+                    elementLabel: 'Tickets Header',
+                    defaultElementOrder: ['header', 'card'],
+                  })} <ChevronRight className="w-4 h-4" />
+                </Link>
+              </div>
+            ),
+          },
+          {
+            id: 'card',
+            node: (
+              <div className="overflow-hidden p-8 sm:p-10 flex flex-col sm:flex-row items-center justify-between gap-8" style={{ background: `linear-gradient(135deg, ${theme.primaryColor}33 0%, ${theme.secondaryColor}22 100%)`, border: `1px solid ${theme.primaryColor}44`, borderRadius: getRadius(theme.borderRadius, 'lg') }}>
+                <div className="flex items-center gap-5">
+                  <div className="w-16 h-16 flex items-center justify-center shadow-lg flex-shrink-0" style={{ backgroundColor: theme.primaryColor, borderRadius: getRadius(theme.borderRadius) }}>
+                    <Ticket className="w-7 h-7" style={{ color: theme.backgroundColor }} />
+                  </div>
+                  <div>
+                    {editableText('tickets', 'subheading', overrides.subheading || 'Reserve Your Place', {
+                      as: 'h3',
+                      className: 'font-black text-xl text-white',
+                      elementId: 'card',
+                      elementLabel: 'Tickets Card',
+                      defaultElementOrder: ['header', 'card'],
+                    })}
+                    <p className="text-slate-400 mt-1">Limited spots available — secure yours now</p>
+                  </div>
+                </div>
+                <Link
+                  to={ticketsUrl}
+                  className={cn('flex-shrink-0 px-8 py-4 shadow-lg', btnClasses)}
+                  style={getEditableButtonStyle('tickets', btnStyle(theme.primaryColor))}
+                  {...getEditableButtonProps('tickets', {
+                    sectionId: 'tickets',
+                    field: 'buttonText',
+                    value: overrides.buttonText || 'Get Tickets',
+                    elementId: 'card',
+                    elementLabel: 'Tickets Card',
+                    defaultElementOrder: ['header', 'card'],
+                  })}
+                >
+                  <Ticket className="w-4 h-4" /> {editableText('tickets', 'buttonText', overrides.buttonText || 'Get Tickets', {
+                    as: 'span',
+                    elementId: 'card',
+                    elementLabel: 'Tickets Card',
+                    defaultElementOrder: ['header', 'card'],
+                  })}
+                </Link>
+              </div>
+            ),
+          },
+        ])}
       </div>
     </AnimatedSection>
+      ));
+    })()
   );
 
   const renderSchedule = () => (
+    (() => {
+      const overrides = getOverrides('schedule');
+      return withSectionFrame('schedule', (
     <AnimatedSection
       key="schedule"
       id="schedule"
       onClick={() => handleClick('schedule')}
       className={cn('py-20', sectionStyle(selectedSection === 'schedule', 'dark'))}
-      style={{ backgroundColor: `${theme.primaryColor}08` }}
+      style={{ backgroundColor: `${theme.primaryColor}08`, ...getSectionSpacingStyle('schedule') }}
     >
-      <div className="max-w-6xl mx-auto px-6 sm:px-10">
-        <div className="w-10 h-1 rounded-full mb-5" style={{ backgroundColor: theme.primaryColor }} />
-        <h2 className="text-4xl font-black mb-10" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>
-          The <span style={{ color: theme.primaryColor }}>Programme</span>
-        </h2>
-        {sessions.length > 0 ? (
+      <div className="max-w-6xl mx-auto px-6 sm:px-10" style={getSectionContentStyle('schedule')}>
+        {renderOrderedElements('schedule', [
+          {
+            id: 'header',
+            node: (
+              <>
+                <div className="w-10 h-1 rounded-full mb-5" style={{ backgroundColor: theme.primaryColor }} />
+                {editableText('schedule', 'heading', overrides.heading || 'The Programme', {
+                  as: 'h2',
+                  className: 'text-4xl font-black mb-10',
+                  style: { fontFamily: theme.headingFont + ', sans-serif' },
+                  elementId: 'header',
+                  elementLabel: 'Schedule Header',
+                  defaultElementOrder: ['header', 'content'],
+                })}
+                {overrides.subheading && editableText('schedule', 'subheading', overrides.subheading, {
+                  as: 'p',
+                  className: 'text-slate-400 mb-6',
+                  elementId: 'header',
+                  elementLabel: 'Schedule Header',
+                  defaultElementOrder: ['header', 'content'],
+                })}
+              </>
+            ),
+          },
+          {
+            id: 'content',
+            node: sessions.length > 0 ? (
           <div className="space-y-3">
             {sessions.map((session) => (
               <div key={session.id} className="flex items-start gap-5 p-5" style={{ backgroundColor: `${theme.primaryColor}0d`, border: `1px solid ${theme.primaryColor}22`, borderRadius: getRadius(theme.borderRadius) }}>
@@ -226,30 +573,60 @@ export function PulseTemplate({
               </div>
             ))}
           </div>
-        ) : (
+            ) : (
           <div className="p-12 text-center" style={{ border: `1px solid ${theme.primaryColor}22`, backgroundColor: theme.backgroundColor, borderRadius: getRadius(theme.borderRadius, 'lg') }}>
             <Calendar className="w-12 h-12 mx-auto mb-4" style={{ color: `${theme.primaryColor}55` }} />
             <p className="font-black text-lg text-white">Schedule Coming Soon</p>
             <p className="text-slate-400 mt-2">The full lineup will be published before the event.</p>
           </div>
-        )}
+            ),
+          },
+        ])}
       </div>
     </AnimatedSection>
+      ));
+    })()
   );
 
   const renderSpeakers = () => (
+    (() => {
+      const overrides = getOverrides('speakers');
+      return withSectionFrame('speakers', (
     <AnimatedSection
       key="speakers"
       id="speakers"
       onClick={() => handleClick('speakers')}
       className={cn('py-20', sectionStyle(selectedSection === 'speakers', 'dark'))}
+      style={getSectionSpacingStyle('speakers')}
     >
-      <div className="max-w-6xl mx-auto px-6 sm:px-10">
-        <div className="w-10 h-1 rounded-full mb-5" style={{ backgroundColor: theme.primaryColor }} />
-        <h2 className="text-4xl font-black mb-10" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>
-          Featured <span style={{ color: theme.primaryColor }}>Speakers</span>
-        </h2>
-        {speakers.length > 0 ? (
+      <div className="max-w-6xl mx-auto px-6 sm:px-10" style={getSectionContentStyle('speakers')}>
+        {renderOrderedElements('speakers', [
+          {
+            id: 'header',
+            node: (
+              <>
+                <div className="w-10 h-1 rounded-full mb-5" style={{ backgroundColor: theme.primaryColor }} />
+                {editableText('speakers', 'heading', overrides.heading || 'Featured Speakers', {
+                  as: 'h2',
+                  className: 'text-4xl font-black mb-10',
+                  style: { fontFamily: theme.headingFont + ', sans-serif' },
+                  elementId: 'header',
+                  elementLabel: 'Speakers Header',
+                  defaultElementOrder: ['header', 'content'],
+                })}
+                {overrides.subheading && editableText('speakers', 'subheading', overrides.subheading, {
+                  as: 'p',
+                  className: 'text-slate-400 mb-6',
+                  elementId: 'header',
+                  elementLabel: 'Speakers Header',
+                  defaultElementOrder: ['header', 'content'],
+                })}
+              </>
+            ),
+          },
+          {
+            id: 'content',
+            node: speakers.length > 0 ? (
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-6">
             {speakers.map((sp) => (
               <div key={sp.id} className="text-center p-4 flex flex-col items-center" style={{ backgroundColor: `${theme.primaryColor}0d`, border: `1px solid ${theme.primaryColor}22`, borderRadius: getRadius(theme.borderRadius, 'lg') }}>
@@ -268,34 +645,60 @@ export function PulseTemplate({
               </div>
             ))}
           </div>
-        ) : (
+            ) : (
           <div className="p-12 text-center" style={{ border: `1px solid ${theme.primaryColor}22`, borderRadius: getRadius(theme.borderRadius, 'lg') }}>
             <Mic className="w-12 h-12 mx-auto mb-4" style={{ color: `${theme.primaryColor}55` }} />
             <p className="font-black text-lg text-white">Lineup Being Announced</p>
             <p className="text-slate-400 mt-2">Our incredible speakers will be revealed soon. Stay tuned!</p>
           </div>
-        )}
+            ),
+          },
+        ])}
       </div>
     </AnimatedSection>
+      ));
+    })()
   );
 
   const renderSponsors = () => (
+    (() => {
+      const overrides = getOverrides('sponsors');
+      return withSectionFrame('sponsors', (
     <AnimatedSection
       key="sponsors"
       id="sponsors"
       onClick={() => handleClick('sponsors')}
       className={cn('py-20', sectionStyle(selectedSection === 'sponsors', 'dark'))}
-      style={{ backgroundColor: `${theme.primaryColor}08` }}
+      style={{ backgroundColor: `${theme.primaryColor}08`, ...getSectionSpacingStyle('sponsors') }}
     >
-      <div className="max-w-6xl mx-auto px-6 sm:px-10">
-        <div className="text-center mb-10">
-          <div className="w-10 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: theme.primaryColor }} />
-          <h2 className="text-4xl font-black" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>
-            Our <span style={{ color: theme.primaryColor }}>Sponsors</span>
-          </h2>
-          <p className="text-slate-400 mt-3">The organisations making this event possible</p>
-        </div>
-        {sponsors.length > 0 ? (
+      <div className="max-w-6xl mx-auto px-6 sm:px-10" style={getSectionContentStyle('sponsors')}>
+        {renderOrderedElements('sponsors', [
+          {
+            id: 'header',
+            node: (
+              <div className="text-center mb-10">
+                <div className="w-10 h-1 rounded-full mx-auto mb-5" style={{ backgroundColor: theme.primaryColor }} />
+                {editableText('sponsors', 'heading', overrides.heading || 'Our Sponsors', {
+                  as: 'h2',
+                  className: 'text-4xl font-black',
+                  style: { fontFamily: theme.headingFont + ', sans-serif' },
+                  elementId: 'header',
+                  elementLabel: 'Sponsors Header',
+                  defaultElementOrder: ['header', 'content'],
+                })}
+                {editableText('sponsors', 'subheading', overrides.subheading || 'The organisations making this event possible', {
+                  as: 'p',
+                  className: 'text-slate-400 mt-3',
+                  elementId: 'header',
+                  elementLabel: 'Sponsors Header',
+                  defaultElementOrder: ['header', 'content'],
+                })}
+              </div>
+            ),
+          },
+          {
+            id: 'content',
+            node: sponsors.length > 0 ? (
           <div className="flex flex-wrap items-center justify-center gap-5">
             {sponsors.map((sp) => (
               <a key={sp.id} href={sp.websiteUrl || '#'} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
@@ -305,15 +708,19 @@ export function PulseTemplate({
               </a>
             ))}
           </div>
-        ) : (
+            ) : (
           <div className="p-12 text-center" style={{ border: `1px solid ${theme.primaryColor}22`, backgroundColor: theme.backgroundColor, borderRadius: getRadius(theme.borderRadius, 'lg') }}>
             <Users className="w-12 h-12 mx-auto mb-4" style={{ color: `${theme.primaryColor}55` }} />
             <p className="font-black text-lg text-white">Sponsors Being Confirmed</p>
             <p className="text-slate-400 mt-2">Our amazing partners will be announced soon.</p>
           </div>
-        )}
+            ),
+          },
+        ])}
       </div>
     </AnimatedSection>
+      ));
+    })()
   );
 
   const renderVoting = () => (
@@ -638,8 +1045,8 @@ export function PulseTemplate({
         >
           <div className="max-w-6xl mx-auto px-6 sm:px-10 h-14 flex items-center justify-between gap-6">
             <div className="flex items-center gap-3 min-w-0">
-              {config.logoUrl ? (
-                <img src={config.logoUrl} alt="Logo" className="h-8 w-auto object-contain flex-shrink-0" />
+              {config.logoAsset?.url || config.logoUrl ? (
+                <img src={config.logoAsset?.url || config.logoUrl} alt="Logo" className="h-8 w-auto object-contain flex-shrink-0" />
               ) : event.branding?.logo ? (
                 <img src={event.branding.logo} alt="Logo" className="h-8 w-auto object-contain flex-shrink-0" />
               ) : (
@@ -647,7 +1054,10 @@ export function PulseTemplate({
                   <Zap className="w-4 h-4 text-black" />
                 </div>
               )}
-              <span className="text-sm font-black text-white truncate hidden sm:block">{event.name}</span>
+              {editableText('hero', 'description', getOverrides('hero').description || event.name, {
+                as: 'span',
+                className: 'text-sm font-black text-white truncate hidden sm:block',
+              })}
             </div>
             <div className="hidden md:flex items-center gap-5 text-xs font-bold uppercase tracking-widest">
               {isVisible('about') && <a href="#about" className="text-slate-400 hover:text-white transition-colors">About</a>}
@@ -656,8 +1066,20 @@ export function PulseTemplate({
               {isVisible('sponsors') && <a href="#sponsors" className="text-slate-400 hover:text-white transition-colors">Sponsors</a>}
             </div>
             {isVisible('tickets') && (
-              <Link to={`/e/${slug}/tickets`} className={cn('flex-shrink-0 px-5 py-2 text-xs font-bold', btnClasses)} style={btnStyle(theme.primaryColor)} onClick={(e) => e.stopPropagation()}>
-                <Ticket className="w-3.5 h-3.5" /> Tickets
+              <Link
+                to={ticketsUrl}
+                className={cn('flex-shrink-0 px-5 py-2 text-xs font-bold', btnClasses)}
+                style={getEditableButtonStyle('hero', btnStyle(theme.primaryColor))}
+                {...getEditableButtonProps('hero', {
+                  sectionId: 'hero',
+                  field: 'buttonText',
+                  value: getOverrides('hero').buttonText || 'Tickets',
+                  elementId: 'cta',
+                  elementLabel: 'Hero CTA',
+                  defaultElementOrder: ['logo', 'badge', 'heading', 'subheading', 'meta', 'cta'],
+                })}
+              >
+                <Ticket className="w-3.5 h-3.5" /> {editableText('hero', 'buttonText', getOverrides('hero').buttonText || 'Tickets', { as: 'span' })}
               </Link>
             )}
           </div>
@@ -666,53 +1088,115 @@ export function PulseTemplate({
 
       {/* ── HERO SECTION ─────────────────────────────────────────────── */}
       {isVisible('hero') && (
+        (() => {
+          const overrides = getOverrides('hero');
+          return withSectionFrame('hero', (
         <section
           onClick={() => handleClick('hero')}
           className={cn('relative', sectionStyle(selectedSection === 'hero', 'dark'))}
+          style={getSectionSpacingStyle('hero')}
         >
           <div className="relative overflow-hidden" style={{ minHeight: 580 }}>
-            {event.coverImageUrl ? (
-              <img src={event.coverImageUrl} alt={event.name} className="absolute inset-0 w-full h-full object-cover scale-105" style={{ filter: 'brightness(0.3)' }} />
+            {(overrides.heroImage?.url || event.coverImageUrl) ? (
+              <img src={overrides.heroImage?.url || event.coverImageUrl} alt={overrides.heroImage?.altText || event.name} className="absolute inset-0 w-full h-full object-cover scale-105" style={{ filter: 'brightness(0.3)' }} />
             ) : (
               <div className="absolute inset-0" style={{ background: `radial-gradient(ellipse at top left, ${theme.primaryColor}44 0%, ${theme.backgroundColor} 60%)` }} />
             )}
-            <div className="absolute inset-0" style={{ background: `linear-gradient(to top, ${theme.backgroundColor} 0%, ${theme.backgroundColor}88 30%, transparent 70%)` }} />
+            <div className="absolute inset-0" style={getHeroOverlayStyle(overrides)} />
             <div className="absolute top-0 left-0 right-0 h-1" style={{ backgroundColor: theme.primaryColor }} />
 
-            <div className="relative z-10 max-w-6xl mx-auto px-6 sm:px-10 flex flex-col justify-end" style={{ minHeight: 580, paddingBottom: '5rem' }}>
-              {event.branding?.logo && (
-                <img src={event.branding.logo} alt="Logo" className="w-16 h-16 object-contain mb-6" style={{ borderRadius: getRadius(theme.borderRadius, 'lg') }} />
-              )}
-              <div className="flex items-center gap-3 mb-5">
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest" style={{ backgroundColor: theme.primaryColor, color: '#000' }}>
-                  <Zap className="w-3 h-3" />
-                  {event.status === 'published' ? 'Now Live' : 'Upcoming'}
-                </div>
-                <span className="text-slate-500 text-xs font-medium">{event.type}</span>
-              </div>
-              <h1 className="text-5xl sm:text-6xl lg:text-7xl font-black leading-none mb-6 max-w-3xl" style={{ letterSpacing: '-0.02em', fontFamily: theme.headingFont + ', sans-serif' }}>
-                {event.name}
-              </h1>
-              <div className="flex flex-wrap gap-6 mb-10">
-                {event.date && <span className="flex items-center gap-2 text-sm text-slate-300"><Calendar className="w-4 h-4" style={{ color: theme.primaryColor }} /><span className="font-medium">{event.date}</span></span>}
-                {event.time && <span className="flex items-center gap-2 text-sm text-slate-300"><Clock className="w-4 h-4" style={{ color: theme.primaryColor }} /><span className="font-medium">{event.time}</span></span>}
-                {(event.venueLocation || event.country) && <span className="flex items-center gap-2 text-sm text-slate-300"><MapPin className="w-4 h-4" style={{ color: theme.primaryColor }} /><span className="font-medium">{event.venueLocation || event.country}</span></span>}
-              </div>
-              <div className="flex gap-3 flex-wrap">
-                {isVisible('tickets') && (
-                  <Link to={`/e/${slug}/tickets`} className={cn('px-9 py-4 shadow-lg', btnClasses)} style={btnStyle(theme.primaryColor)} onClick={(e) => e.stopPropagation()}>
-                    <Ticket className="w-4 h-4" /> Get Tickets
-                  </Link>
-                )}
-                {isVisible('voting') && (
-                  <Link to={`/e/${slug}/voting`} className="inline-flex items-center gap-2 px-8 py-4 font-bold text-sm border-2 hover:bg-white/5 transition-all" style={{ borderColor: theme.primaryColor, color: theme.primaryColor, borderRadius: getRadius(theme.borderRadius) }} onClick={(e) => e.stopPropagation()}>
-                    <Vote className="w-4 h-4" /> Vote
-                  </Link>
-                )}
-              </div>
+            <div className="relative z-10 max-w-6xl mx-auto px-6 sm:px-10 flex flex-col justify-end" style={{ minHeight: 580, paddingBottom: '5rem', ...getSectionContentStyle('hero') }}>
+              {renderOrderedElements('hero', [
+                {
+                  id: 'logo',
+                  node: event.branding?.logo ? (
+                    <img src={event.branding.logo} alt="Logo" className="w-16 h-16 object-contain mb-6" style={{ borderRadius: getRadius(theme.borderRadius, 'lg') }} />
+                  ) : null,
+                },
+                {
+                  id: 'badge',
+                  node: (
+                    <div className="flex items-center gap-3 mb-5">
+                      <div className="flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold uppercase tracking-widest" style={{ backgroundColor: theme.primaryColor, color: '#000' }}>
+                        <Zap className="w-3 h-3" />
+                        {event.status === 'published' ? 'Now Live' : 'Upcoming'}
+                      </div>
+                      <span className="text-slate-500 text-xs font-medium">{event.type}</span>
+                    </div>
+                  ),
+                },
+                {
+                  id: 'heading',
+                  node: editableText('hero', 'heading', overrides.heading || event.name, {
+                    as: 'h1',
+                    className: 'text-5xl sm:text-6xl lg:text-7xl font-black leading-none mb-6 max-w-3xl',
+                    style: { letterSpacing: '-0.02em', fontFamily: theme.headingFont + ', sans-serif' },
+                    elementId: 'heading',
+                    elementLabel: 'Hero Heading',
+                    defaultElementOrder: ['logo', 'badge', 'heading', 'subheading', 'meta', 'cta'],
+                  }),
+                },
+                {
+                  id: 'subheading',
+                  node: overrides.subheading ? editableText('hero', 'subheading', overrides.subheading, {
+                    as: 'p',
+                    className: 'text-slate-300 text-lg max-w-3xl mb-6',
+                    multiline: true,
+                    elementId: 'subheading',
+                    elementLabel: 'Hero Subheading',
+                    defaultElementOrder: ['logo', 'badge', 'heading', 'subheading', 'meta', 'cta'],
+                  }) : null,
+                },
+                {
+                  id: 'meta',
+                  node: (
+                    <div className="flex flex-wrap gap-6 mb-10">
+                      {event.date && <span className="flex items-center gap-2 text-sm text-slate-300"><Calendar className="w-4 h-4" style={{ color: theme.primaryColor }} /><span className="font-medium">{event.date}</span></span>}
+                      {event.time && <span className="flex items-center gap-2 text-sm text-slate-300"><Clock className="w-4 h-4" style={{ color: theme.primaryColor }} /><span className="font-medium">{event.time}</span></span>}
+                      {(event.venueLocation || event.country) && <span className="flex items-center gap-2 text-sm text-slate-300"><MapPin className="w-4 h-4" style={{ color: theme.primaryColor }} /><span className="font-medium">{event.venueLocation || event.country}</span></span>}
+                    </div>
+                  ),
+                },
+                {
+                  id: 'cta',
+                  node: (
+                    <div className="mb-4 flex flex-wrap gap-3 sm:mb-6">
+                      {isVisible('tickets') && (
+                        <Link
+                          to={ticketsUrl}
+                          className={cn('px-9 py-4 shadow-lg', btnClasses)}
+                          style={getEditableButtonStyle('hero', btnStyle(theme.primaryColor))}
+                          {...getEditableButtonProps('hero', {
+                            sectionId: 'hero',
+                            field: 'buttonText',
+                            value: overrides.buttonText || 'Get Tickets',
+                            elementId: 'cta',
+                            elementLabel: 'Hero CTA',
+                            defaultElementOrder: ['logo', 'badge', 'heading', 'subheading', 'meta', 'cta'],
+                          })}
+                        >
+                          <Ticket className="w-4 h-4" /> {editableText('hero', 'buttonText', overrides.buttonText || 'Get Tickets', {
+                            as: 'span',
+                            elementId: 'cta',
+                            elementLabel: 'Hero CTA',
+                            defaultElementOrder: ['logo', 'badge', 'heading', 'subheading', 'meta', 'cta'],
+                          })}
+                        </Link>
+                      )}
+                      {isVisible('voting') && (
+                        <Link to={`/e/${slug}/voting`} className="inline-flex items-center gap-2 px-8 py-4 font-bold text-sm border-2 hover:bg-white/5 transition-all" style={{ borderColor: theme.primaryColor, color: theme.primaryColor, borderRadius: getRadius(theme.borderRadius) }} onClick={(e) => e.stopPropagation()}>
+                          <Vote className="w-4 h-4" /> Vote
+                        </Link>
+                      )}
+                    </div>
+                  ),
+                },
+              ])}
             </div>
           </div>
         </section>
+          ));
+        })()
       )}
 
       {/* Divider after hero */}
@@ -744,7 +1228,7 @@ export function PulseTemplate({
               </div>
               <div className="flex flex-col items-start sm:items-end gap-3">
                 <div className="flex flex-wrap gap-4 text-sm">
-                  {isVisible('tickets') && <Link to={`/e/${slug}/tickets`} className="font-bold hover:opacity-80 transition-opacity" style={{ color: theme.primaryColor }} onClick={(e) => e.stopPropagation()}>Tickets</Link>}
+                  {isVisible('tickets') && <Link to={ticketsUrl} className="font-bold hover:opacity-80 transition-opacity" style={{ color: theme.primaryColor }} onClick={(e) => e.stopPropagation()}>Tickets</Link>}
                   {isVisible('voting') && <Link to={`/e/${slug}/voting`} className="text-slate-400 hover:text-white transition-colors font-medium" onClick={(e) => e.stopPropagation()}>Vote</Link>}
                   {isVisible('merch') && <Link to={`/e/${slug}/merch`} className="text-slate-400 hover:text-white transition-colors font-medium" onClick={(e) => e.stopPropagation()}>Merch</Link>}
                   {isVisible('forms') && <Link to={`/e/${slug}/forms`} className="text-slate-400 hover:text-white transition-colors font-medium" onClick={(e) => e.stopPropagation()}>Forms</Link>}

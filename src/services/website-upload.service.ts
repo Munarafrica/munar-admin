@@ -1,14 +1,40 @@
 // Website Upload Service
 // Handles image uploads for the website builder (custom blocks, logos, etc.)
-// Uses real backend integration with apiClient
+// Uses signed direct-to-storage uploads
 
 import { apiClient } from '../lib/api-client';
+import { WebsiteAssetCategory, WebsiteAssetRef } from '../modules/website/types';
 
-export interface UploadResponse {
+export interface WebsiteAssetUploadResponse {
+  id: string;
+  eventId: string;
+  ownerId: string;
+  category: WebsiteAssetCategory;
+  storageProvider: string;
+  bucket: string;
+  objectKey: string;
   url: string;
-  publicId: string;
+  mimeType: string;
+  originalFilename: string;
+  sizeBytes: number;
   width?: number;
   height?: number;
+  altText?: string;
+  status: 'PENDING' | 'READY' | 'FAILED' | 'DELETED';
+  checksum?: string;
+  createdAt: string;
+  updatedAt: string;
+  finalizedAt?: string | null;
+  deletedAt?: string | null;
+}
+
+export interface SignedUploadResponse {
+  assetId: string;
+  uploadUrl: string;
+  publicUrl: string;
+  objectKey: string;
+  headers?: Record<string, string>;
+  expiresInSeconds?: number;
 }
 
 export interface UploadProgress {
@@ -17,11 +43,79 @@ export interface UploadProgress {
   percentage: number;
 }
 
+const CATEGORY_RULES: Record<WebsiteAssetCategory, { maxSize: number; validTypes: string[] }> = {
+  hero: { maxSize: 10 * 1024 * 1024, validTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'] },
+  section: { maxSize: 8 * 1024 * 1024, validTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/svg+xml'] },
+  logo: { maxSize: 4 * 1024 * 1024, validTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/svg+xml'] },
+  gallery: { maxSize: 12 * 1024 * 1024, validTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'] },
+  seo: { maxSize: 5 * 1024 * 1024, validTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'] },
+  'custom-block': { maxSize: 8 * 1024 * 1024, validTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/svg+xml'] },
+};
+
+function toAssetRef(asset: WebsiteAssetUploadResponse): WebsiteAssetRef {
+  return {
+    assetId: asset.id,
+    url: asset.url,
+    altText: asset.altText,
+    width: asset.width,
+    height: asset.height,
+  };
+}
+
+function stripUrlSearch(url: string): string {
+  try {
+    const parsed = new URL(url);
+    parsed.search = '';
+    return parsed.toString();
+  } catch {
+    return url;
+  }
+}
+
+async function canLoadImage(url: string): Promise<boolean> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const timer = window.setTimeout(() => resolve(false), 4000);
+
+    img.onload = () => {
+      window.clearTimeout(timer);
+      resolve(true);
+    };
+
+    img.onerror = () => {
+      window.clearTimeout(timer);
+      resolve(false);
+    };
+
+    img.src = url;
+  });
+}
+
+async function resolveDisplayUrl(candidates: Array<string | undefined | null>): Promise<string | undefined> {
+  const normalized = Array.from(
+    new Set(
+      candidates
+        .filter((value): value is string => Boolean(value))
+        .map((value) => value.trim())
+        .filter(Boolean)
+    )
+  );
+
+  for (const candidate of normalized) {
+    // eslint-disable-next-line no-await-in-loop
+    const loadable = await canLoadImage(candidate);
+    if (loadable) return candidate;
+  }
+
+  return normalized[0];
+}
+
 /**
  * Website Upload Service
  * Provides image upload functionality for the website builder
  */
 export const websiteUploadService = {
+  toAssetRef,
   /**
    * Upload a single image for website content (custom blocks, logos, etc.)
    * @param eventId - The event ID
@@ -32,28 +126,63 @@ export const websiteUploadService = {
   async uploadImage(
     eventId: string,
     file: File,
-    category: 'block' | 'logo' | 'gallery' | 'seo' = 'block'
-  ): Promise<UploadResponse> {
-    // Validate file type
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
-    if (!validTypes.includes(file.type)) {
-      throw new Error('Invalid file type. Please upload a valid image file (JPEG, PNG, GIF, WebP, SVG).');
+    category: WebsiteAssetCategory = 'custom-block',
+    altText?: string,
+  ): Promise<WebsiteAssetUploadResponse> {
+    const validationError = this.validateImage(file, category);
+    if (validationError) {
+      throw new Error(validationError);
     }
 
-    // Validate file size (max 5MB)
-    const maxSize = 5 * 1024 * 1024; // 5MB
-    if (file.size > maxSize) {
-      throw new Error('File size exceeds 5MB limit. Please upload a smaller image.');
-    }
+    const { width, height } = await this.getImageDimensions(file).catch(() => ({ width: undefined, height: undefined }));
 
-    // Upload to backend
-    const response = await apiClient.upload<{ data: UploadResponse }>(
-      `/events/${eventId}/website/upload`,
-      file,
-      { category }
+    const signed = await apiClient.post<SignedUploadResponse>(
+      `/events/${eventId}/website/assets/sign`,
+      {
+        filename: file.name,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        category,
+      }
     );
 
-    return response.data;
+    const uploadResponse = await fetch(signed.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type,
+        ...(signed.headers || {}),
+      },
+      body: file,
+    });
+
+    if (!uploadResponse.ok) {
+      throw new Error(`Storage upload failed with status ${uploadResponse.status}`);
+    }
+
+    const finalized = await apiClient.post<WebsiteAssetUploadResponse>(
+      `/events/${eventId}/website/assets`,
+      {
+        assetId: signed.assetId,
+        category,
+        url: signed.publicUrl,
+        mimeType: file.type,
+        sizeBytes: file.size,
+        width,
+        height,
+        altText,
+      }
+    );
+
+    const displayUrl = await resolveDisplayUrl([
+      finalized.url,
+      signed.publicUrl,
+      stripUrlSearch(signed.uploadUrl),
+    ]);
+
+    return {
+      ...finalized,
+      url: displayUrl || finalized.url,
+    };
   },
 
   /**
@@ -66,8 +195,8 @@ export const websiteUploadService = {
   async uploadMultipleImages(
     eventId: string,
     files: File[],
-    category: 'block' | 'gallery' = 'block'
-  ): Promise<UploadResponse[]> {
+    category: WebsiteAssetCategory = 'gallery'
+  ): Promise<WebsiteAssetUploadResponse[]> {
     const uploadPromises = files.map((file) =>
       this.uploadImage(eventId, file, category)
     );
@@ -79,8 +208,45 @@ export const websiteUploadService = {
    * @param eventId - The event ID
    * @param publicId - The public ID of the image to delete
    */
-  async deleteImage(eventId: string, publicId: string): Promise<void> {
-    await apiClient.delete(`/events/${eventId}/website/upload/${publicId}`);
+  async deleteImage(eventId: string, assetId: string, force = false): Promise<void> {
+    const query = force ? '?force=true' : '';
+    await apiClient.delete(`/events/${eventId}/website/assets/${assetId}${query}`);
+  },
+
+  async listAssets(
+    eventId: string,
+    params: Partial<{ category: WebsiteAssetCategory; status: 'PENDING' | 'READY' | 'FAILED' | 'DELETED'; cursor: string; limit: number; search: string }> = {},
+  ): Promise<{ data: WebsiteAssetUploadResponse[]; nextCursor: string | null }> {
+    const query = new URLSearchParams();
+    Object.entries(params).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        query.set(key, String(value));
+      }
+    });
+
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    const response = await apiClient.get<
+      | { data: WebsiteAssetUploadResponse[]; nextCursor: string | null }
+      | { data: { data: WebsiteAssetUploadResponse[]; nextCursor: string | null } }
+    >(`/events/${eventId}/website/assets${suffix}`);
+
+    const inner = Array.isArray((response as { data?: WebsiteAssetUploadResponse[] }).data)
+      ? response as { data: WebsiteAssetUploadResponse[]; nextCursor: string | null }
+      : (response as { data?: { data?: WebsiteAssetUploadResponse[]; nextCursor?: string | null } }).data;
+
+    if (inner && Array.isArray((inner as { data?: WebsiteAssetUploadResponse[] }).data)) {
+      return {
+        data: (inner as { data: WebsiteAssetUploadResponse[] }).data,
+        nextCursor: (inner as { nextCursor?: string | null }).nextCursor ?? null,
+      };
+    }
+
+    return {
+      data: Array.isArray((response as { data?: WebsiteAssetUploadResponse[] }).data)
+        ? (response as { data: WebsiteAssetUploadResponse[] }).data
+        : [],
+      nextCursor: (response as { nextCursor?: string | null }).nextCursor ?? null,
+    };
   },
 
   /**
@@ -104,16 +270,17 @@ export const websiteUploadService = {
    * Validate an image file before upload
    * @returns An error message if invalid, or null if valid
    */
-  validateImage(file: File): string | null {
-    const validTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml'];
-    if (!validTypes.includes(file.type)) {
-      return 'Invalid file type. Please upload a valid image file (JPEG, PNG, GIF, WebP, SVG).';
+  validateImage(file: File, category: WebsiteAssetCategory = 'custom-block'): string | null {
+    const rules = CATEGORY_RULES[category];
+    if (!rules.validTypes.includes(file.type)) {
+      return `Invalid file type for ${category} images.`;
     }
 
-    const maxSize = 5 * 1024 * 1024; // 5MB
-    if (file.size > maxSize) {
-      return 'File size exceeds 5MB limit.';
+    if (file.size > rules.maxSize) {
+      return `File size exceeds maximum allowed size for ${category} uploads.`;
     }
+
+    if (file.size <= 0) return 'Selected file is empty.';
 
     return null;
   },

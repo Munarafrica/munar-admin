@@ -5,7 +5,7 @@ import { Button } from '../components/ui/button';
 import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
 import { cn } from '../components/ui/utils';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import Masonry, { ResponsiveMasonry } from "react-responsive-masonry";
 import { 
   ArrowLeft, Upload, Image as ImageIcon, Video, Star, Eye, 

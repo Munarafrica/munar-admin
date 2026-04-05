@@ -1,43 +1,55 @@
-// Public Forms Page - Attendee-facing form listing
-// Route: /e/:eventSlug/forms
-
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth, useEvent } from '../../contexts';
-import { useBrandSafe } from '../../contexts/BrandContext';
 import { Button } from '../../components/ui/button';
-import { FileText, ArrowLeft, Clock, CheckCircle, Loader2, AlertCircle } from 'lucide-react';
+import { FileText, ArrowLeft, Clock, CheckCircle, Loader2 } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
-import { cn } from '../../components/ui/utils';
 import { formsService } from '../../services';
 import { Form } from '../../components/event-dashboard/types';
 
 export function FormsPublic() {
   const { currentEvent } = useEvent();
   const { isAuthenticated } = useAuth();
-  const { branding } = useBrandSafe();
   const { eventSlug } = useParams<{ eventSlug: string }>();
   const slug = currentEvent?.slug || eventSlug || '';
 
   const [forms, setForms] = useState<Form[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [eventName, setEventName] = useState(currentEvent?.name || '');
+  const [error, setError] = useState<string | null>(null);
+  const [eventName, setEventName] = useState(currentEvent?.name || 'Event forms');
 
   useEffect(() => {
-    if (!slug) return;
+    if (!slug) {
+      return;
+    }
     setIsLoading(true);
+    setError(null);
     formsService
       .getPublicForms(slug)
       .then((data) => {
         setForms(data.forms || []);
-        if (data.event?.name) setEventName(data.event.name);
+        setEventName(data.event?.name || currentEvent?.name || 'Event forms');
       })
-      .catch(() => setForms([]))
+      .catch(async (err) => {
+        if (isAuthenticated && currentEvent?.id) {
+          try {
+            const adminForms = await formsService.getForms(currentEvent.id);
+            setForms(adminForms.filter((form) => form.status === 'published'));
+            setEventName(currentEvent?.name || 'Event forms');
+            setError(null);
+            return;
+          } catch {
+            // Fall through to the public error message below.
+          }
+        }
+
+        setForms([]);
+        setError(err instanceof Error ? err.message : 'Unable to load forms.');
+      })
       .finally(() => setIsLoading(false));
-  }, [slug]);
+  }, [currentEvent?.id, currentEvent?.name, isAuthenticated, slug]);
 
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-['Raleway']">
-      {/* Header */}
       <div className="bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800">
         <div className="max-w-3xl mx-auto px-4 py-6">
           <Link
@@ -53,42 +65,39 @@ export function FormsPublic() {
               <FileText className="w-5 h-5 text-pink-600 dark:text-pink-400" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">
-                Forms & Surveys
-              </h1>
-              <p className="text-sm text-slate-500 dark:text-slate-400">
-                {eventName}
-              </p>
+              <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Forms & Surveys</h1>
+              <p className="text-sm text-slate-500 dark:text-slate-400">{eventName}</p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Loading */}
-      {isLoading && (
-        <div className="flex justify-center py-20">
-          <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
-        </div>
-      )}
-
-      {/* Empty State */}
-      {!isLoading && forms.length === 0 && (
-        <div className="max-w-3xl mx-auto px-4 py-16 text-center">
-          <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
-            <FileText className="w-8 h-8 text-slate-400" />
+      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+        {isLoading && (
+          <div className="flex justify-center py-20">
+            <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
           </div>
-          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-1">
-            No forms available
-          </h3>
-          <p className="text-sm text-slate-500 dark:text-slate-400">
-            There are no published forms for this event yet.
-          </p>
-        </div>
-      )}
+        )}
 
-      {/* Form List */}
-      {!isLoading && forms.length > 0 && (
-        <div className="max-w-3xl mx-auto px-4 py-8">
+        {!isLoading && error && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
+            {error}
+          </div>
+        )}
+
+        {!isLoading && !error && forms.length === 0 && (
+          <div className="py-16 text-center">
+            <div className="w-16 h-16 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center mx-auto mb-4">
+              <FileText className="w-8 h-8 text-slate-400" />
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-1">No published forms available</h3>
+            <p className="text-sm text-slate-500 dark:text-slate-400">
+              Published forms for this event will appear here once they are ready.
+            </p>
+          </div>
+        )}
+
+        {!isLoading && !error && forms.length > 0 && (
           <div className="space-y-4">
             {forms.map((form) => (
               <Link
@@ -96,15 +105,13 @@ export function FormsPublic() {
                 to={`/e/${slug}/forms/${form.id}`}
                 className="block bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-md transition-all group"
               >
-                <div className="flex items-start justify-between mb-2">
+                <div className="flex items-start justify-between mb-2 gap-4">
                   <div>
                     <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
                       {form.title}
                     </h3>
                     {form.description && (
-                      <p className="text-sm text-slate-500 dark:text-slate-400">
-                        {form.description}
-                      </p>
+                      <p className="text-sm text-slate-500 dark:text-slate-400">{form.description}</p>
                     )}
                   </div>
                   <span className="px-2.5 py-1 rounded-full text-xs font-medium flex items-center gap-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 shrink-0">
@@ -126,17 +133,15 @@ export function FormsPublic() {
                   className="rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white pointer-events-none"
                   tabIndex={-1}
                 >
-                  {isAuthenticated ? 'Open Form' : 'Sign In to Register'}
+                  Open Form
                 </Button>
               </Link>
             ))}
           </div>
-        </div>
-      )}
-
-      <div className="text-center py-6 text-xs text-slate-400 dark:text-slate-600">
-        Powered by Munar
+        )}
       </div>
+
+      <div className="text-center py-6 text-xs text-slate-400 dark:text-slate-600">Powered by Munar</div>
     </div>
   );
 }

@@ -42,8 +42,8 @@ export function PublishModal({
       {/* Modal */}
       <div className="relative bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
         {/* Header */}
-        <div className="px-6 py-5 border-b border-slate-100 dark:border-slate-800">
-          <div className="flex items-center gap-3">
+        <div className="px-6 py-6 border-b border-slate-100 dark:border-slate-800">
+          <div className="flex items-center gap-3.5">
             <div className={cn(
               'w-10 h-10 rounded-xl flex items-center justify-center',
               isPublished ? 'bg-amber-100 dark:bg-amber-950/50' : 'bg-emerald-100 dark:bg-emerald-950/50'
@@ -54,11 +54,11 @@ export function PublishModal({
                 <Globe className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               )}
             </div>
-            <div>
+            <div className="space-y-1.5 py-4">
               <h2 className="font-bold text-slate-900 dark:text-slate-100">
                 {isPublished ? 'Unpublish Website' : 'Publish Website'}
               </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+              <p className="text-xs leading-5 text-slate-500 dark:text-slate-400">
                 {isPublished ? 'Make the website private' : 'Make the website publicly accessible'}
               </p>
             </div>
@@ -117,7 +117,7 @@ export function PublishModal({
           ) : (
             <>
               {/* Draft state - about to publish */}
-              <div className="space-y-3 mb-5">
+              <div className="space-y-3 mt-4 mb-5">
                 <h3 className="text-sm font-semibold text-slate-700 dark:text-slate-300">Before publishing:</h3>
 
                 {/* Checklist */}
@@ -127,7 +127,7 @@ export function PublishModal({
                     { label: 'Hero section is visible', checked: config.sections.find(s => s.id === 'hero')?.visible ?? true },
                     { label: 'Website theme is configured', checked: true },
                   ].map((item) => (
-                    <div key={item.label} className="flex items-center gap-2.5 text-sm">
+                    <div key={item.label} className="flex items-center gap-3 text-sm">
                       <div className={cn(
                         'w-4 h-4 rounded-full flex items-center justify-center flex-shrink-0',
                         item.checked ? 'bg-emerald-500' : 'bg-slate-200 dark:bg-slate-700'
@@ -143,7 +143,7 @@ export function PublishModal({
               </div>
 
               {/* URL preview */}
-              <div className="mb-4">
+              <div className="mb-4 mt-4">
                 <label className="block text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-widest mb-2">
                   Your website URL
                 </label>
@@ -177,7 +177,7 @@ export function PublishModal({
             <button
               onClick={onPublish}
               disabled={isLoading}
-              className="flex-1 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-semibold text-sm hover:bg-emerald-700 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+              className="flex-1 px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm hover:shadow-md text-white font-semibold text-sm transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {isLoading ? (
                 'Publishing...'

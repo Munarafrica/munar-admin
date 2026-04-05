@@ -22,6 +22,10 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
   const [activeTab, setActiveTab] = useState<'types' | 'attendees' | 'validation' | 'questions' | 'settings'>('types');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<TicketType | null>(null);
+  const [ticketPendingDelete, setTicketPendingDelete] = useState<TicketType | null>(null);
+  const [isDeletingTicket, setIsDeletingTicket] = useState(false);
+  const [orderedTickets, setOrderedTickets] = useState<TicketType[]>([]);
+  const [draggedTicketId, setDraggedTicketId] = useState<string | null>(null);
   const [selectedAttendee, setSelectedAttendee] = useState<Attendee | null>(null);
   const eventId = getCurrentEventId();
   const [eventSlug, setEventSlug] = useState<string>('');
@@ -41,9 +45,12 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
   const {
     tickets,
     isLoading,
+    error,
+    analytics,
     attendees,
     isLoadingAttendees,
     fetchTickets,
+    fetchAnalytics,
     createTicket,
     updateTicket,
     deleteTicket,
@@ -61,9 +68,74 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
     }
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  useEffect(() => {
+    if (!eventId) return;
+    fetchAnalytics();
+  }, [eventId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    setOrderedTickets(tickets);
+  }, [tickets]);
+
+  const reorderTicketsLocally = useCallback((items: TicketType[], sourceId: string, targetId: string) => {
+    if (sourceId === targetId) return items;
+
+    const next = [...items];
+    const fromIndex = next.findIndex((ticket) => ticket.id === sourceId);
+    const toIndex = next.findIndex((ticket) => ticket.id === targetId);
+
+    if (fromIndex === -1 || toIndex === -1) {
+      return items;
+    }
+
+    const [movedTicket] = next.splice(fromIndex, 1);
+    next.splice(toIndex, 0, movedTicket);
+    return next;
+  }, []);
+
+  const handleDragStart = useCallback((ticketId: string) => (event: React.DragEvent<HTMLElement>) => {
+    setDraggedTicketId(ticketId);
+    event.dataTransfer.effectAllowed = 'move';
+    event.dataTransfer.setData('text/plain', ticketId);
+  }, []);
+
+  const handleDragOver = useCallback((targetTicketId: string) => (event: React.DragEvent<HTMLTableRowElement>) => {
+    event.preventDefault();
+    if (!draggedTicketId || draggedTicketId === targetTicketId) return;
+
+    setOrderedTickets((current) => reorderTicketsLocally(current, draggedTicketId, targetTicketId));
+  }, [draggedTicketId, reorderTicketsLocally]);
+
+  const handleDragEnd = useCallback(() => {
+    setDraggedTicketId(null);
+  }, []);
+
+  const handleDrop = useCallback((targetTicketId: string) => async (event: React.DragEvent<HTMLTableRowElement>) => {
+    event.preventDefault();
+    const sourceTicketId = draggedTicketId || event.dataTransfer.getData('text/plain');
+
+    if (!sourceTicketId) {
+      setDraggedTicketId(null);
+      return;
+    }
+
+    const nextOrder = reorderTicketsLocally(orderedTickets, sourceTicketId, targetTicketId);
+    setOrderedTickets(nextOrder);
+    setDraggedTicketId(null);
+
+    try {
+      await ticketsService.reorderTickets(eventId, nextOrder.map((ticket) => ticket.id));
+    } catch {
+      setOrderedTickets(tickets);
+      toast.error('Failed to reorder tickets');
+    }
+  }, [draggedTicketId, eventId, orderedTickets, reorderTicketsLocally, tickets]);
+
   const handleCreateTicket = async (newTicket: Partial<TicketType>) => {
     const ticket = await createTicket(newTicket);
     if (ticket) {
+      await fetchTickets();
+      await fetchAnalytics();
       eventsService.updateModuleCount(
         eventId,
         'Tickets',
@@ -72,22 +144,33 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
         'ticket'
       );
       toast.success(`Ticket "${ticket.name}" created`);
+      return ticket;
     }
+    toast.error('Failed to create ticket');
+    return null;
   };
 
   const handleEditTicket = async (updatedData: Partial<TicketType>) => {
     if (!editingTicket) return;
     const updated = await updateTicket(editingTicket.id, updatedData);
     if (updated) {
+      await fetchTickets();
+      await fetchAnalytics();
       toast.success(`Ticket "${updated.name}" updated`);
+      return updated;
     }
+    toast.error('Failed to update ticket');
     setEditingTicket(null);
+    return null;
   };
 
-  const handleDeleteTicket = async (id: string) => {
-    if (!window.confirm("Are you sure you want to delete this ticket?")) return;
-    const success = await deleteTicket(id);
-    if (success) {
+  const handleDeleteTicket = async () => {
+    if (!ticketPendingDelete) return;
+    setIsDeletingTicket(true);
+    const result = await deleteTicket(ticketPendingDelete.id);
+    if (result.success) {
+      await fetchTickets();
+      await fetchAnalytics();
       eventsService.updateModuleCount(
         eventId,
         'Tickets',
@@ -96,7 +179,11 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
         'ticket'
       );
       toast.success('Ticket deleted');
+      setTicketPendingDelete(null);
+    } else {
+      toast.error(result.error || error || 'Failed to delete ticket');
     }
+    setIsDeletingTicket(false);
   };
 
   const handleDuplicateTicket = async (id: string) => {
@@ -144,10 +231,10 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
     };
 
     const stats = {
-        totalTypes: tickets.length,
-        onSale: tickets.filter(t => t.status === 'On Sale').length,
-        sold: tickets.reduce((sum, t) => sum + t.quantitySold, 0),
-        revenue: tickets.reduce((sum, t) => sum + (t.isFree ? 0 : (t.price || 0) * t.quantitySold), 0),
+        totalTypes: orderedTickets.length,
+        onSale: orderedTickets.filter(t => t.status === 'On Sale').length,
+        sold: analytics?.totalSold ?? orderedTickets.reduce((sum, t) => sum + t.quantitySold, 0),
+        revenue: analytics?.totalRevenue ?? orderedTickets.reduce((sum, t) => sum + (t.isFree ? 0 : (t.price || 0) * t.quantitySold), 0),
     };
 
     const StatCard = ({ label, value, icon: Icon, color }: { label: string; value: string | number; icon: any; color: string }) => (
@@ -251,7 +338,7 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
                                 <div className="flex items-center justify-center h-64">
                                     <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
                                 </div>
-                            ) : tickets.length === 0 ? (
+                            ) : orderedTickets.length === 0 ? (
                                 <div className="flex flex-col items-center justify-center h-64 text-center">
                                     <div className="w-16 h-16 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
                                         <Ticket className="w-8 h-8 text-slate-400 dark:text-slate-500" />
@@ -275,9 +362,29 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
                                             </tr>
                                         </thead>
                                         <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
-                                            {tickets.map((ticket) => (
-                                                <tr key={ticket.id} className="group hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors">
-                                                    <td className="py-4 px-4 text-slate-400 dark:text-slate-600 cursor-move">⋮⋮</td>
+                                            {orderedTickets.map((ticket) => (
+                                                <tr
+                                                    key={ticket.id}
+                                                    onDragOver={handleDragOver(ticket.id)}
+                                                    onDrop={handleDrop(ticket.id)}
+                                                    onDragEnd={handleDragEnd}
+                                                    className={cn(
+                                                      "group hover:bg-slate-50/50 dark:hover:bg-slate-800/50 transition-colors",
+                                                      draggedTicketId === ticket.id && "opacity-60"
+                                                    )}
+                                                >
+                                                    <td className="py-4 px-4 text-slate-500 dark:text-slate-400">
+                                                      <button
+                                                        type="button"
+                                                        draggable
+                                                        onDragStart={handleDragStart(ticket.id)}
+                                                        onDragEnd={handleDragEnd}
+                                                        className="cursor-grab active:cursor-grabbing rounded p-1 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                                                        title="Drag to reorder"
+                                                      >
+                                                        ⋮⋮
+                                                      </button>
+                                                    </td>
                                                     <td className="py-4 px-4">
                                                         <span className="font-semibold text-slate-900 dark:text-slate-100 block">{ticket.name}</span>
                                                         <span className="text-xs text-slate-500 dark:text-slate-400">
@@ -315,7 +422,7 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
                                                         </span>
                                                     </td>
                                                     <td className="py-4 px-4 text-right">
-                                                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <div className="flex items-center justify-end gap-2 opacity-70 group-hover:opacity-100 transition-opacity">
                                                             <button onClick={() => openEditModal(ticket)} className="p-1 text-slate-400 dark:text-slate-500 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors" title="Edit">
                                                                 <Edit className="w-4 h-4" />
                                                             </button>
@@ -325,7 +432,7 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
                                                             <button 
                                                                 className="p-1 text-slate-400 dark:text-slate-500 hover:text-red-600 dark:hover:text-red-400 transition-colors" 
                                                                 title="Delete"
-                                                                onClick={() => handleDeleteTicket(ticket.id)}
+                                                                onClick={() => setTicketPendingDelete(ticket)}
                                                             >
                                                                 <Trash2 className="w-4 h-4" />
                                                             </button>
@@ -450,6 +557,43 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
           onSave={editingTicket ? handleEditTicket : handleCreateTicket}
           editTicket={editingTicket}
        />
+
+       {ticketPendingDelete && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => {
+                if (!isDeletingTicket) {
+                  setTicketPendingDelete(null);
+                }
+              }}
+            />
+            <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+              <div className="border-b border-slate-100 px-6 py-8 dark:border-slate-800">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Delete Ticket?</h3>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  This will permanently delete "{ticketPendingDelete.name}" from this event.
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-3 px-6 py-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setTicketPendingDelete(null)}
+                  disabled={isDeletingTicket}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => void handleDeleteTicket()}
+                  disabled={isDeletingTicket}
+                >
+                  {isDeletingTicket ? 'Deleting...' : 'Delete Ticket'}
+                </Button>
+              </div>
+            </div>
+          </div>
+       )}
 
        {/* Attendee Detail Modal */}
        <AttendeeDetailModal

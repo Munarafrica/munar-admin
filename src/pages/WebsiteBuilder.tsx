@@ -15,10 +15,13 @@ import {
   DEFAULT_THEME_HORIZON,
   DEFAULT_THEME_PULSE,
   WebsiteTemplateId,
+  WebsitePreviewEditableSelectMessage,
 } from '../modules/website/types';
 import { BuilderTopBar } from '../components/website-builder/BuilderTopBar';
 import { BuilderCanvas } from '../components/website-builder/BuilderCanvas';
 import { BuilderConfigPanel } from '../components/website-builder/BuilderConfigPanel';
+import { PreviewInspector } from '../components/website-builder/PreviewInspector';
+import { AssetLibraryHost, AssetLibraryRequestDetail } from '../components/website-builder/SingleImageField';
 import { TemplatePicker } from '../components/website-builder/modals/TemplatePicker';
 import { PublishModal } from '../components/website-builder/modals/PublishModal';
 import type { ConfigPanelTab } from '../components/website-builder/BuilderConfigPanel';
@@ -44,6 +47,8 @@ export function WebsiteBuilder() {
   const [showTemplatePicker, setShowTemplatePicker] = useState(false);
   const [showPublishModal, setShowPublishModal] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
+  const [selectedEditable, setSelectedEditable] = useState<WebsitePreviewEditableSelectMessage['selection'] | null>(null);
+  const [assetLibraryRequest, setAssetLibraryRequest] = useState<AssetLibraryRequestDetail | null>(null);
 
   const autoSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isInitialLoad = useRef(true);
@@ -215,6 +220,7 @@ export function WebsiteBuilder() {
           selectedSection={selectedSection}
           eventSlug={eventSlug}
           eventId={eventId}
+          onOpenAssetLibrary={setAssetLibraryRequest}
           onTabChange={setActiveTab}
           onSelectSection={(id) => {
             setSelectedSection(id);
@@ -229,16 +235,31 @@ export function WebsiteBuilder() {
 
         {/* Canvas (centre) */}
         <BuilderCanvas
+          eventId={eventId || ''}
           eventSlug={eventSlug}
           config={config}
           previewMode={previewMode}
           isReady={isPreviewReady}
           selectedSectionId={selectedSection}
           onIframeReady={() => setIsPreviewReady(true)}
+          onConfigChange={updateConfig}
           onSectionClick={(id) => {
+            setSelectedEditable(null);
             setSelectedSection(id);
             setActiveTab('sections');
           }}
+          onEditableSelect={(selection) => {
+            setSelectedEditable(selection);
+            setSelectedSection(selection.sectionId);
+          }}
+        />
+
+        <PreviewInspector
+          config={config}
+          previewMode={previewMode}
+          selection={selectedEditable}
+          onUpdateConfig={updateConfig}
+          onClearSelection={() => setSelectedEditable(null)}
         />
       </div>
 
@@ -262,6 +283,11 @@ export function WebsiteBuilder() {
           isLoading={isPublishing}
         />
       )}
+
+      <AssetLibraryHost
+        request={assetLibraryRequest}
+        onClose={() => setAssetLibraryRequest(null)}
+      />
     </div>
   );
 }

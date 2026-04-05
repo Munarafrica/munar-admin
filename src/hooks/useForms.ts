@@ -1,6 +1,6 @@
 // Forms Hook - fetch and manage forms & responses
 import { useState, useEffect, useCallback } from 'react';
-import { formsService, CreateFormRequest, UpdateFormRequest } from '../services';
+import { formsService, CreateFormRequest, UpdateFormRequest, FormAnalyticsSummary } from '../services';
 import { Form, FormResponse } from '../components/event-dashboard/types';
 import { PaginatedResponse, SearchParams } from '../types/api';
 
@@ -28,6 +28,7 @@ interface UseFormsReturn {
   duplicateForm: (formId: string) => Promise<Form | null>;
   publishForm: (formId: string) => Promise<Form | null>;
   closeForm: (formId: string) => Promise<Form | null>;
+  archiveForm: (formId: string) => Promise<Form | null>;
   
   // Response Actions
   fetchResponses: (formId: string, params?: SearchParams) => Promise<void>;
@@ -35,12 +36,7 @@ interface UseFormsReturn {
   exportResponses: (formId: string, format?: 'csv' | 'xlsx') => Promise<void>;
   
   // Analytics
-  fetchFormAnalytics: (formId: string) => Promise<{
-    totalResponses: number;
-    completionRate: number;
-    averageTimeToComplete: number;
-    responsesByDay: Array<{ date: string; count: number }>;
-  } | null>;
+  fetchFormAnalytics: (formId: string) => Promise<FormAnalyticsSummary | null>;
 }
 
 export function useForms({ eventId, autoFetch = true }: UseFormsOptions): UseFormsReturn {
@@ -141,6 +137,17 @@ export function useForms({ eventId, autoFetch = true }: UseFormsOptions): UseFor
     }
   }, [eventId]);
 
+  const archiveForm = useCallback(async (formId: string): Promise<Form | null> => {
+    try {
+      const updated = await formsService.archiveForm(eventId, formId);
+      setForms(prev => prev.map(f => f.id === formId ? updated : f));
+      return updated;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to archive form');
+      return null;
+    }
+  }, [eventId]);
+
   // Fetch responses
   const fetchResponses = useCallback(async (formId: string, params?: SearchParams) => {
     setIsLoadingResponses(true);
@@ -217,6 +224,7 @@ export function useForms({ eventId, autoFetch = true }: UseFormsOptions): UseFor
     duplicateForm,
     publishForm,
     closeForm,
+    archiveForm,
     fetchResponses,
     deleteResponse,
     exportResponses,

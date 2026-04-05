@@ -3,11 +3,12 @@
 
 import React, { useRef, useEffect, useCallback } from 'react';
 import { Loader2 } from 'lucide-react';
-import { SectionId, WebsiteConfig, WebsitePreviewMessage, WebsiteSectionClickMessage } from '../../modules/website/types';
+import { SectionId, WebsiteConfig, WebsitePreviewConfigUpdateMessage, WebsitePreviewEditableSelectMessage, WebsitePreviewMessage, WebsiteSectionClickMessage } from '../../modules/website/types';
 
 export type PreviewMode = 'desktop' | 'tablet' | 'mobile';
 
 interface BuilderCanvasProps {
+  eventId: string;
   eventSlug: string;
   config: WebsiteConfig;
   previewMode: PreviewMode;
@@ -16,6 +17,8 @@ interface BuilderCanvasProps {
   onIframeReady: () => void;
   /** Called when the user clicks a section in the iframe preview */
   onSectionClick?: (id: SectionId) => void;
+  onConfigChange?: (updates: Partial<WebsiteConfig>) => void;
+  onEditableSelect?: (selection: WebsitePreviewEditableSelectMessage['selection']) => void;
 }
 
 const PREVIEW_WIDTHS: Record<PreviewMode, { maxWidth: string; label: string }> = {
@@ -34,11 +37,11 @@ const PREVIEW_WIDTHS: Record<PreviewMode, { maxWidth: string; label: string }> =
 };
 
 export function BuilderCanvas({
-  eventSlug, config, previewMode, isReady, selectedSectionId,
-  onIframeReady, onSectionClick,
+  eventId, eventSlug, config, previewMode, isReady, selectedSectionId,
+  onIframeReady, onSectionClick, onConfigChange, onEditableSelect,
 }: BuilderCanvasProps) {
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const previewUrl = `${window.location.origin}/e/${config.slug || eventSlug}?preview=1`;
+  const previewUrl = `${window.location.origin}/e/${config.slug || eventSlug}?preview=1&eventId=${encodeURIComponent(eventId)}`;
   const pw = PREVIEW_WIDTHS[previewMode];
 
   // Send config + selected section to iframe via postMessage
@@ -48,10 +51,11 @@ export function BuilderCanvas({
       type: 'WEBSITE_PREVIEW_CONFIG',
       config,
       eventSlug,
+      previewMode,
       selectedSectionId: selectedSectionId ?? null,
     };
     iframeRef.current.contentWindow.postMessage(msg, window.location.origin);
-  }, [config, eventSlug, selectedSectionId]);
+  }, [config, eventSlug, previewMode, selectedSectionId]);
 
   // Listen for READY and SECTION_CLICK from iframe
   useEffect(() => {
@@ -62,12 +66,18 @@ export function BuilderCanvas({
       } else if (event.data?.type === 'WEBSITE_SECTION_CLICK') {
         const msg = event.data as WebsiteSectionClickMessage;
         onSectionClick?.(msg.sectionId);
+      } else if (event.data?.type === 'WEBSITE_PREVIEW_CONFIG_UPDATE') {
+        const msg = event.data as WebsitePreviewConfigUpdateMessage;
+        onConfigChange?.(msg.updates);
+      } else if (event.data?.type === 'WEBSITE_PREVIEW_EDITABLE_SELECT') {
+        const msg = event.data as WebsitePreviewEditableSelectMessage;
+        onEditableSelect?.(msg.selection);
       }
     };
 
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, [sendConfig, onIframeReady, onSectionClick]);
+  }, [sendConfig, onIframeReady, onSectionClick, onConfigChange, onEditableSelect]);
 
   // Re-send config whenever it changes (iframe already loaded)
   useEffect(() => {

@@ -4,7 +4,7 @@
 // Features: Dynamic section ordering, theme-aware buttons, scroll animations, custom blocks
 
 import React, { useEffect, useRef, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useParams, useSearchParams } from 'react-router-dom';
 import {
   Calendar, MapPin, Clock, Ticket, Vote, ShoppingBag, FileText,
   Image, ExternalLink, Users, Mic, ChevronRight, ChevronUp,
@@ -12,12 +12,26 @@ import {
 } from 'lucide-react';
 import { EventData, Speaker, Session } from '../../../components/event-dashboard/types';
 import { Sponsor } from '../../../types/sponsors';
-import { WebsiteConfig, SectionId, CustomBlock } from '../types';
+import { EditableTextField, SectionId, SectionOverrides, WebsiteConfig, CustomBlock, TextStyleValues, WebsitePreviewEditableSelectMessage } from '../types';
 import { cn } from '../../../components/ui/utils';
 import {
   getRadius, getButtonStyle, getButtonClasses, sectionStyle,
   GALLERY_PLACEHOLDER_IMAGES,
 } from './helpers';
+import { PreviewEditableText } from '../components/PreviewEditableText';
+import { PreviewSectionFrame } from '../components/PreviewSectionFrame';
+
+function hexToRgba(hex: string, opacity: number) {
+  const safeHex = hex.replace('#', '');
+  const normalized = safeHex.length === 3
+    ? safeHex.split('').map((char) => char + char).join('')
+    : safeHex.padEnd(6, '0').slice(0, 6);
+  const value = Number.parseInt(normalized, 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
+}
 
 // ── Social icons (inline SVG for footer) ────────────────────────────────────
 const SocialIcon = ({ type, url }: { type: string; url: string }) => {
@@ -79,28 +93,240 @@ interface HorizonTemplateProps {
   sponsors?: Sponsor[];
   onSectionClick?: (id: SectionId) => void;
   selectedSection?: SectionId | null;
+  isPreviewMode?: boolean;
+  activeBreakpoint?: 'desktop' | 'tablet' | 'mobile';
+  onSectionOverrideUpdate?: (sectionId: SectionId, overrides: SectionOverrides) => void;
+  onSectionReorder?: (sectionId: SectionId, direction: 'up' | 'down') => void;
 }
 
 // ── Main Template ───────────────────────────────────────────────────────────
 
 export function HorizonTemplate({
   event, config, speakers = [], sessions = [], sponsors = [],
-  onSectionClick, selectedSection,
+  onSectionClick, selectedSection, isPreviewMode, activeBreakpoint, onSectionOverrideUpdate, onSectionReorder,
 }: HorizonTemplateProps) {
   const { eventSlug } = useParams<{ eventSlug: string }>();
+  const [searchParams] = useSearchParams();
   const slug = eventSlug || event.slug || event.id;
+  const isPreviewRoute = searchParams.get('preview') === '1';
+  const previewEnabled = isPreviewMode ?? isPreviewRoute;
+  const previewSuffix = previewEnabled ? `?preview=1&eventId=${encodeURIComponent(event.id)}` : '';
+  const ticketsUrl = `/e/${slug}/tickets${previewSuffix}`;
   const { theme } = config;
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const [draggedBlockId, setDraggedBlockId] = useState<string | null>(null);
 
   const visibleSections = [...config.sections]
     .filter((s) => s.visible)
     .sort((a, b) => a.order - b.order);
+  const getOverrides = (id: SectionId) => config.sections.find((section) => section.id === id)?.overrides || {};
 
   const isVisible = (id: SectionId) => visibleSections.some((s) => s.id === id);
+  const visibleSectionIds = visibleSections.map((section) => section.id);
+  const sectionIndex = (id: SectionId) => visibleSectionIds.indexOf(id);
+  const getSectionSpacingStyle = (id: SectionId): React.CSSProperties => {
+    const layout = getOverrides(id).layout;
+    return {
+      ...(layout?.paddingTop ? { paddingTop: layout.paddingTop } : {}),
+      ...(layout?.paddingBottom ? { paddingBottom: layout.paddingBottom } : {}),
+    };
+  };
+  const getSectionContentStyle = (id: SectionId): React.CSSProperties => {
+    const layout = getOverrides(id).layout;
+    const align = layout?.contentAlign || 'center';
+    return {
+      ...(layout?.contentMaxWidth ? { maxWidth: layout.contentMaxWidth, width: '100%' } : {}),
+      ...(align === 'left' ? { marginLeft: 0, marginRight: 'auto' } : {}),
+      ...(align === 'center' ? { marginLeft: 'auto', marginRight: 'auto' } : {}),
+      ...(align === 'right' ? { marginLeft: 'auto', marginRight: 0 } : {}),
+    };
+  };
+  const getFieldStyleValues = (sectionId: SectionId, field: EditableTextField): Partial<TextStyleValues> => {
+    const styleMap = getOverrides(sectionId).styles || {};
+    const fieldStyle = styleMap[field] || {};
+    const responsive = activeBreakpoint && activeBreakpoint !== 'desktop'
+      ? fieldStyle.responsive?.[activeBreakpoint] || {}
+      : {};
+
+    return {
+      ...fieldStyle,
+      ...responsive,
+    };
+  };
+  const emitEditableSelection = (selection: WebsitePreviewEditableSelectMessage['selection']) => {
+    if (!previewEnabled || typeof window === 'undefined' || !window.parent || window.parent === window) return;
+    const message: WebsitePreviewEditableSelectMessage = {
+      type: 'WEBSITE_PREVIEW_EDITABLE_SELECT',
+      selection,
+    };
+    window.parent.postMessage(message, '*');
+  };
+  const getEditableButtonStyle = (sectionId: SectionId, baseStyle: React.CSSProperties = {}): React.CSSProperties => {
+    const buttonStyle = getFieldStyleValues(sectionId, 'buttonText');
+    return {
+      ...baseStyle,
+      ...(buttonStyle.backgroundColor ? { backgroundColor: buttonStyle.backgroundColor } : {}),
+      ...(buttonStyle.color ? { color: buttonStyle.color } : {}),
+      ...(buttonStyle.borderRadius ? { borderRadius: buttonStyle.borderRadius } : {}),
+      ...(buttonStyle.padding ? { padding: buttonStyle.padding } : {}),
+      ...(buttonStyle.fontFamily ? { fontFamily: buttonStyle.fontFamily } : {}),
+      ...(buttonStyle.fontWeight ? { fontWeight: buttonStyle.fontWeight } : {}),
+      ...(buttonStyle.fontSize ? { fontSize: buttonStyle.fontSize } : {}),
+      ...(buttonStyle.letterSpacing ? { letterSpacing: buttonStyle.letterSpacing } : {}),
+      ...(buttonStyle.lineHeight ? { lineHeight: buttonStyle.lineHeight } : {}),
+      ...(buttonStyle.marginTop ? { marginTop: buttonStyle.marginTop } : {}),
+      ...(buttonStyle.marginBottom ? { marginBottom: buttonStyle.marginBottom } : {}),
+    };
+  };
+  const getEditableButtonProps = (
+    sectionId: SectionId,
+    selection: WebsitePreviewEditableSelectMessage['selection'],
+  ) => ({
+    onClick: (event: React.MouseEvent<HTMLElement>) => {
+      event.stopPropagation();
+      if (previewEnabled) {
+        event.preventDefault();
+        emitEditableSelection(selection);
+      }
+    },
+  });
 
   const handleClick = (id: SectionId) => {
     if (onSectionClick) onSectionClick(id);
   };
+  const getHeroOverlayStyle = (overrides: SectionOverrides): React.CSSProperties => {
+    const overlay = overrides.heroOverlay;
+    if (!overlay || overlay.enabled === false) {
+      return { background: 'linear-gradient(to top, rgba(0,0,0,0.7), rgba(0,0,0,0.3), transparent)' };
+    }
+
+    const primary = hexToRgba(overlay.color || '#020617', overlay.opacity ?? 0.72);
+    const secondary = hexToRgba(overlay.secondaryColor || overlay.color || '#0f172a', overlay.secondaryOpacity ?? 0.28);
+
+    return {
+      background: overlay.style === 'solid'
+        ? primary
+        : `linear-gradient(${overlay.direction || 'to top'}, ${primary} 0%, ${secondary} 55%, transparent 100%)`,
+      mixBlendMode: overlay.blendMode || 'normal',
+    };
+  };
+
+  const editableText = (
+    sectionId: SectionId,
+    field: EditableTextField,
+    value: string,
+    options: {
+      as?: keyof React.JSX.IntrinsicElements;
+      className?: string;
+      style?: React.CSSProperties;
+      multiline?: boolean;
+      elementId?: string;
+      elementLabel?: string;
+      defaultElementOrder?: string[];
+    } = {},
+  ) => (
+    <PreviewEditableText
+      as={options.as}
+      className={options.className}
+      style={options.style}
+      multiline={options.multiline}
+      sectionId={sectionId}
+      elementId={options.elementId}
+      elementLabel={options.elementLabel}
+      defaultElementOrder={options.defaultElementOrder}
+      field={field}
+      value={value}
+      isPreviewMode={previewEnabled}
+      activeBreakpoint={activeBreakpoint}
+      overrides={getOverrides(sectionId)}
+      onUpdate={(id, overrides) => onSectionOverrideUpdate?.(id, overrides)}
+    />
+  );
+
+  const getOrderedElementIds = (sectionId: SectionId, defaultOrder: string[]) => {
+    const saved = (getOverrides(sectionId).elementOrder || []).filter((id) => defaultOrder.includes(id));
+    return [...saved, ...defaultOrder.filter((id) => !saved.includes(id))];
+  };
+
+  const updateElementOrder = (sectionId: SectionId, nextOrder: string[]) => {
+    const currentOverrides = getOverrides(sectionId);
+    onSectionOverrideUpdate?.(sectionId, {
+      ...currentOverrides,
+      elementOrder: nextOrder,
+    });
+  };
+
+  const renderOrderedElements = (
+    sectionId: SectionId,
+    items: Array<{ id: string; node: React.ReactNode }>
+  ) => {
+    const itemMap = new Map(items.map((item) => [item.id, item.node] as const));
+    const orderedIds = getOrderedElementIds(sectionId, items.map((item) => item.id));
+    const hiddenElementIds = getOverrides(sectionId).hiddenElementIds || [];
+
+    return orderedIds
+      .filter((id) => !hiddenElementIds.includes(id))
+      .map((id) => (
+      <div
+        key={id}
+        draggable={previewEnabled && selectedSection === sectionId}
+        onDragStart={(event) => {
+          if (!(previewEnabled && selectedSection === sectionId)) return;
+          event.stopPropagation();
+          event.dataTransfer.effectAllowed = 'move';
+          event.dataTransfer.setData('text/plain', id);
+          setDraggedBlockId(id);
+        }}
+        onDragEnd={() => setDraggedBlockId(null)}
+        onDragOver={(event) => {
+          if (!(previewEnabled && selectedSection === sectionId)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          event.dataTransfer.dropEffect = 'move';
+        }}
+        onDrop={(event) => {
+          if (!(previewEnabled && selectedSection === sectionId)) return;
+          event.preventDefault();
+          event.stopPropagation();
+          const fromId = event.dataTransfer.getData('text/plain') || draggedBlockId;
+          if (!fromId || fromId === id) {
+            setDraggedBlockId(null);
+            return;
+          }
+          const fromIndex = orderedIds.indexOf(fromId);
+          const toIndex = orderedIds.indexOf(id);
+          if (fromIndex === -1 || toIndex === -1) {
+            setDraggedBlockId(null);
+            return;
+          }
+          const nextOrder = [...orderedIds];
+          const [moved] = nextOrder.splice(fromIndex, 1);
+          nextOrder.splice(toIndex, 0, moved);
+          updateElementOrder(sectionId, nextOrder);
+          setDraggedBlockId(null);
+        }}
+        className={`relative ${draggedBlockId === id ? 'opacity-50' : ''}`}
+      >
+        {itemMap.get(id) || null}
+      </div>
+    ));
+  };
+
+  const withSectionFrame = (sectionId: SectionId, child: React.ReactNode) => (
+    <PreviewSectionFrame
+      sectionId={sectionId}
+      isPreviewMode={previewEnabled}
+      isSelected={selectedSection === sectionId}
+      canMoveUp={sectionIndex(sectionId) > 0}
+      canMoveDown={sectionIndex(sectionId) > -1 && sectionIndex(sectionId) < visibleSectionIds.length - 1}
+      overrides={getOverrides(sectionId)}
+      onSelect={handleClick}
+      onUpdate={(id, overrides) => onSectionOverrideUpdate?.(id, overrides)}
+      onReorder={onSectionReorder}
+    >
+      {child}
+    </PreviewSectionFrame>
+  );
 
   // Button style helpers
   const btnStyle = (color: string, textColor = '#ffffff') => getButtonStyle(theme, color, textColor);
@@ -117,21 +343,50 @@ export function HorizonTemplate({
 
   const renderAbout = () => (
     (event.description || event.type) ? (
+      (() => {
+        const overrides = getOverrides('about');
+        return withSectionFrame('about', (
       <AnimatedSection
         key="about"
         id="about"
         onClick={() => handleClick('about')}
         className={cn('py-16 border-b border-slate-100', sectionStyle(selectedSection === 'about'))}
+        style={getSectionSpacingStyle('about')}
       >
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-10">
+        <div className="grid grid-cols-1 gap-10 md:grid-cols-3" style={getSectionContentStyle('about')}>
           <div className="md:col-span-2">
-            <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>About the Event</p>
-            <h2 className="text-3xl font-bold text-slate-900 mb-5" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>{event.name}</h2>
-            {event.description ? (
-              <p className="text-slate-600 leading-relaxed text-base">{event.description}</p>
-            ) : (
-              <p className="text-slate-400 italic">Event description goes here.</p>
-            )}
+            {renderOrderedElements('about', [
+              {
+                id: 'eyebrow',
+                node: <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>About the Event</p>,
+              },
+              {
+                id: 'heading',
+                node: editableText('about', 'heading', overrides.heading || event.name, {
+                  as: 'h2',
+                  className: 'text-3xl font-bold text-slate-900 mb-5',
+                  style: { fontFamily: theme.headingFont + ', sans-serif' },
+                  elementId: 'heading',
+                  elementLabel: 'About Heading',
+                  defaultElementOrder: ['eyebrow', 'heading', 'description'],
+                }),
+              },
+              {
+                id: 'description',
+                node: (overrides.description || event.description) ? (
+                  editableText('about', 'description', overrides.description || event.description || '', {
+                    as: 'p',
+                    className: 'text-slate-600 leading-relaxed text-base',
+                    multiline: true,
+                    elementId: 'description',
+                    elementLabel: 'About Description',
+                    defaultElementOrder: ['eyebrow', 'heading', 'description'],
+                  })
+                ) : (
+                  <p className="text-slate-400 italic">Event description goes here.</p>
+                ),
+              },
+            ])}
           </div>
           <div className="bg-slate-50 p-6 space-y-4 self-start" style={{ borderRadius: getRadius(theme.borderRadius, 'lg') }}>
             <h3 className="font-semibold text-slate-900 text-sm">Event Details</h3>
@@ -161,52 +416,141 @@ export function HorizonTemplate({
           </div>
         </div>
       </AnimatedSection>
+        ));
+      })()
     ) : null
   );
 
   const renderTickets = () => (
+    (() => {
+      const overrides = getOverrides('tickets');
+      return withSectionFrame('tickets', (
     <AnimatedSection
       key="tickets"
       id="tickets"
       onClick={() => handleClick('tickets')}
       className={cn('py-16 border-b border-slate-100', sectionStyle(selectedSection === 'tickets'))}
+      style={getSectionSpacingStyle('tickets')}
     >
-      <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>Tickets</p>
-      <div className="flex items-end justify-between mb-8">
-        <h2 className="text-3xl font-bold text-slate-900" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>Register Now</h2>
-        <Link to={`/e/${slug}/tickets`} className="text-sm font-semibold flex items-center gap-1 hover:gap-2 transition-all" style={{ color: theme.primaryColor }} onClick={(e) => e.stopPropagation()}>
-          View all tickets <ChevronRight className="w-4 h-4" />
-        </Link>
-      </div>
-      <div className="overflow-hidden shadow-sm border border-slate-100" style={{ borderRadius: getRadius(theme.borderRadius, 'lg') }}>
-        <div className="p-8 flex flex-col sm:flex-row items-center justify-between gap-6" style={{ background: `linear-gradient(135deg, ${theme.primaryColor}11, ${theme.secondaryColor}11)` }}>
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 flex items-center justify-center shadow" style={{ backgroundColor: theme.primaryColor, borderRadius: getRadius(theme.borderRadius) }}>
-              <Ticket className="w-6 h-6 text-white" />
+      <div style={getSectionContentStyle('tickets')}>
+      {renderOrderedElements('tickets', [
+        {
+          id: 'eyebrow',
+          node: <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>Tickets</p>,
+        },
+        {
+          id: 'header',
+          node: (
+            <div className="flex items-end justify-between mb-8">
+              {editableText('tickets', 'heading', overrides.heading || 'Register Now', {
+                as: 'h2',
+                className: 'text-3xl font-bold text-slate-900',
+                style: { fontFamily: theme.headingFont + ', sans-serif' },
+                elementId: 'header',
+                elementLabel: 'Tickets Header',
+                defaultElementOrder: ['eyebrow', 'header', 'card'],
+              })}
+              <Link to={ticketsUrl} className="text-sm font-semibold flex items-center gap-1 hover:gap-2 transition-all" style={{ color: theme.primaryColor }} onClick={(e) => e.stopPropagation()}>
+                {editableText('tickets', 'description', overrides.description || 'View all tickets', {
+                  as: 'span',
+                  elementId: 'header',
+                  elementLabel: 'Tickets Header',
+                  defaultElementOrder: ['eyebrow', 'header', 'card'],
+                })} <ChevronRight className="w-4 h-4" />
+              </Link>
             </div>
-            <div>
-              <h3 className="font-bold text-slate-900 text-lg">Secure Your Spot</h3>
-              <p className="text-slate-500 text-sm mt-0.5">Get your tickets before they sell out</p>
+          ),
+        },
+        {
+          id: 'card',
+          node: (
+            <div className="overflow-hidden shadow-sm border border-slate-100" style={{ borderRadius: getRadius(theme.borderRadius, 'lg') }}>
+              <div className="p-8 flex flex-col sm:flex-row items-center justify-between gap-6" style={{ background: `linear-gradient(135deg, ${theme.primaryColor}11, ${theme.secondaryColor}11)` }}>
+                <div className="flex items-center gap-4">
+                  <div className="w-14 h-14 flex items-center justify-center shadow" style={{ backgroundColor: theme.primaryColor, borderRadius: getRadius(theme.borderRadius) }}>
+                    <Ticket className="w-6 h-6 text-white" />
+                  </div>
+                  <div>
+                    {editableText('tickets', 'subheading', overrides.subheading || 'Secure Your Spot', {
+                      as: 'h3',
+                      className: 'font-bold text-slate-900 text-lg',
+                      elementId: 'card',
+                      elementLabel: 'Tickets Card',
+                      defaultElementOrder: ['eyebrow', 'header', 'card'],
+                    })}
+                    <p className="text-slate-500 text-sm mt-0.5">Get your tickets before they sell out</p>
+                  </div>
+                </div>
+                <Link
+                  to={ticketsUrl}
+                  className={cn('flex-shrink-0 px-8 py-3.5', btnClasses)}
+                  style={getEditableButtonStyle('tickets', btnStyle(theme.primaryColor))}
+                  {...getEditableButtonProps('tickets', {
+                    sectionId: 'tickets',
+                    field: 'buttonText',
+                    value: overrides.buttonText || 'Get Tickets',
+                    elementId: 'card',
+                    elementLabel: 'Tickets Card',
+                    defaultElementOrder: ['eyebrow', 'header', 'card'],
+                  })}
+                >
+                  <Ticket className="w-4 h-4" /> {editableText('tickets', 'buttonText', overrides.buttonText || 'Get Tickets', {
+                    as: 'span',
+                    elementId: 'card',
+                    elementLabel: 'Tickets Card',
+                    defaultElementOrder: ['eyebrow', 'header', 'card'],
+                  })}
+                </Link>
+              </div>
             </div>
-          </div>
-          <Link to={`/e/${slug}/tickets`} className={cn('flex-shrink-0 px-8 py-3.5', btnClasses)} style={btnStyle(theme.primaryColor)} onClick={(e) => e.stopPropagation()}>
-            <Ticket className="w-4 h-4" /> Get Tickets
-          </Link>
-        </div>
+          ),
+        },
+      ])}
       </div>
     </AnimatedSection>
+      ));
+    })()
   );
 
   const renderSchedule = () => (
+    (() => {
+      const overrides = getOverrides('schedule');
+      return withSectionFrame('schedule', (
     <AnimatedSection
       key="schedule"
       id="schedule"
       onClick={() => handleClick('schedule')}
       className={cn('py-16 border-b border-slate-100', sectionStyle(selectedSection === 'schedule'))}
+      style={getSectionSpacingStyle('schedule')}
     >
-      <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>Programme</p>
-      <h2 className="text-3xl font-bold text-slate-900 mb-8" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>Schedule</h2>
-      {sessions.length > 0 ? (
+      <div style={getSectionContentStyle('schedule')}>
+      {renderOrderedElements('schedule', [
+        {
+          id: 'header',
+          node: (
+            <>
+              <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>Programme</p>
+              {editableText('schedule', 'heading', overrides.heading || 'Schedule', {
+                as: 'h2',
+                className: 'text-3xl font-bold text-slate-900 mb-8',
+                style: { fontFamily: theme.headingFont + ', sans-serif' },
+                elementId: 'header',
+                elementLabel: 'Schedule Header',
+                defaultElementOrder: ['header', 'content'],
+              })}
+              {overrides.subheading && editableText('schedule', 'subheading', overrides.subheading, {
+                as: 'p',
+                className: 'text-slate-500 text-sm mb-6',
+                elementId: 'header',
+                elementLabel: 'Schedule Header',
+                defaultElementOrder: ['header', 'content'],
+              })}
+            </>
+          ),
+        },
+        {
+          id: 'content',
+          node: sessions.length > 0 ? (
         <div className="space-y-3">
           {sessions.map((session) => (
             <div key={session.id} className="flex items-start gap-4 p-4 bg-slate-50 border border-slate-100" style={{ borderRadius: getRadius(theme.borderRadius) }}>
@@ -229,26 +573,60 @@ export function HorizonTemplate({
             </div>
           ))}
         </div>
-      ) : (
+          ) : (
         <div className="border border-slate-100 overflow-hidden bg-slate-50 p-10 text-center" style={{ borderRadius: getRadius(theme.borderRadius, 'lg') }}>
           <Calendar className="w-10 h-10 mx-auto mb-3 text-slate-300" />
           <p className="font-semibold text-slate-500">Schedule Coming Soon</p>
           <p className="text-slate-400 text-sm mt-1">The full programme will be published before the event.</p>
         </div>
-      )}
+          ),
+        },
+      ])}
+      </div>
     </AnimatedSection>
+      ));
+    })()
   );
 
   const renderSpeakers = () => (
+    (() => {
+      const overrides = getOverrides('speakers');
+      return withSectionFrame('speakers', (
     <AnimatedSection
       key="speakers"
       id="speakers"
       onClick={() => handleClick('speakers')}
       className={cn('py-16 border-b border-slate-100', sectionStyle(selectedSection === 'speakers'))}
+      style={getSectionSpacingStyle('speakers')}
     >
-      <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>Speakers</p>
-      <h2 className="text-3xl font-bold text-slate-900 mb-8" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>Who's Speaking</h2>
-      {speakers.length > 0 ? (
+      <div style={getSectionContentStyle('speakers')}>
+      {renderOrderedElements('speakers', [
+        {
+          id: 'header',
+          node: (
+            <>
+              <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>Speakers</p>
+              {editableText('speakers', 'heading', overrides.heading || "Who's Speaking", {
+                as: 'h2',
+                className: 'text-3xl font-bold text-slate-900 mb-8',
+                style: { fontFamily: theme.headingFont + ', sans-serif' },
+                elementId: 'header',
+                elementLabel: 'Speakers Header',
+                defaultElementOrder: ['header', 'content'],
+              })}
+              {overrides.subheading && editableText('speakers', 'subheading', overrides.subheading, {
+                as: 'p',
+                className: 'text-slate-500 text-sm mb-6',
+                elementId: 'header',
+                elementLabel: 'Speakers Header',
+                defaultElementOrder: ['header', 'content'],
+              })}
+            </>
+          ),
+        },
+        {
+          id: 'content',
+          node: speakers.length > 0 ? (
         <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-5">
           {speakers.map((sp) => (
             <div key={sp.id} className="text-center p-4 bg-slate-50/60 border border-slate-100 flex flex-col items-center" style={{ borderRadius: getRadius(theme.borderRadius, 'lg') }}>
@@ -267,28 +645,60 @@ export function HorizonTemplate({
             </div>
           ))}
         </div>
-      ) : (
+          ) : (
         <div className="border border-slate-100 overflow-hidden bg-slate-50 p-10 text-center" style={{ borderRadius: getRadius(theme.borderRadius, 'lg') }}>
           <Mic className="w-10 h-10 mx-auto mb-3 text-slate-300" />
           <p className="font-semibold text-slate-500">Speakers Being Announced</p>
           <p className="text-slate-400 text-sm mt-1">Speaker lineup will be revealed soon. Stay tuned!</p>
         </div>
-      )}
+          ),
+        },
+      ])}
+      </div>
     </AnimatedSection>
+      ));
+    })()
   );
 
   const renderSponsors = () => (
+    (() => {
+      const overrides = getOverrides('sponsors');
+      return withSectionFrame('sponsors', (
     <AnimatedSection
       key="sponsors"
       id="sponsors"
       onClick={() => handleClick('sponsors')}
       className={cn('py-16 border-b border-slate-100', sectionStyle(selectedSection === 'sponsors'))}
+      style={getSectionSpacingStyle('sponsors')}
     >
-      <div className="text-center mb-10">
-        <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>Partners</p>
-        <h2 className="text-3xl font-bold text-slate-900" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>Our Sponsors</h2>
-      </div>
-      {sponsors.length > 0 ? (
+      <div style={getSectionContentStyle('sponsors')}>
+      {renderOrderedElements('sponsors', [
+        {
+          id: 'header',
+          node: (
+            <div className="text-center mb-10">
+              <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>Partners</p>
+              {editableText('sponsors', 'heading', overrides.heading || 'Our Sponsors', {
+                as: 'h2',
+                className: 'text-3xl font-bold text-slate-900',
+                style: { fontFamily: theme.headingFont + ', sans-serif' },
+                elementId: 'header',
+                elementLabel: 'Sponsors Header',
+                defaultElementOrder: ['header', 'content'],
+              })}
+              {overrides.subheading && editableText('sponsors', 'subheading', overrides.subheading, {
+                as: 'p',
+                className: 'text-slate-500 text-sm mt-3',
+                elementId: 'header',
+                elementLabel: 'Sponsors Header',
+                defaultElementOrder: ['header', 'content'],
+              })}
+            </div>
+          ),
+        },
+        {
+          id: 'content',
+          node: sponsors.length > 0 ? (
         <div className="flex flex-wrap items-center justify-center gap-6">
           {sponsors.map((sp) => (
             <a key={sp.id} href={sp.websiteUrl || '#'} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
@@ -298,17 +708,25 @@ export function HorizonTemplate({
             </a>
           ))}
         </div>
-      ) : (
+          ) : (
         <div className="border border-slate-100 bg-slate-50 p-10 text-center" style={{ borderRadius: getRadius(theme.borderRadius, 'lg') }}>
           <Users className="w-10 h-10 mx-auto mb-3 text-slate-300" />
           <p className="font-semibold text-slate-500">Sponsors Being Confirmed</p>
           <p className="text-slate-400 text-sm mt-1">Our amazing sponsors will be announced soon.</p>
         </div>
-      )}
+          ),
+        },
+      ])}
+      </div>
     </AnimatedSection>
+      ));
+    })()
   );
 
   const renderVoting = () => (
+    (() => {
+      const overrides = getOverrides('voting');
+      return (
     <AnimatedSection
       key="voting"
       id="voting"
@@ -323,19 +741,35 @@ export function HorizonTemplate({
               <Vote className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 text-lg">Cast Your Vote</h3>
-              <p className="text-slate-500 text-sm mt-0.5">Have your say in live polls and awards</p>
+              {editableText('voting', 'heading', overrides.heading || 'Cast Your Vote', {
+                as: 'h3',
+                className: 'font-bold text-slate-900 text-lg',
+              })}
+              {editableText('voting', 'subheading', overrides.subheading || 'Have your say in live polls and awards', {
+                as: 'p',
+                className: 'text-slate-500 text-sm mt-0.5',
+              })}
             </div>
           </div>
-          <Link to={`/e/${slug}/voting`} className={cn('flex-shrink-0 px-8 py-3.5', btnClasses)} style={btnStyle(theme.secondaryColor)} onClick={(e) => e.stopPropagation()}>
-            <Vote className="w-4 h-4" /> Vote Now
+          <Link
+            to={`/e/${slug}/voting`}
+            className={cn('flex-shrink-0 px-8 py-3.5', btnClasses)}
+            style={getEditableButtonStyle('voting', btnStyle(theme.secondaryColor))}
+            {...getEditableButtonProps('voting', { sectionId: 'voting', field: 'buttonText', value: overrides.buttonText || 'Vote Now' })}
+          >
+            <Vote className="w-4 h-4" /> {editableText('voting', 'buttonText', overrides.buttonText || 'Vote Now', { as: 'span' })}
           </Link>
         </div>
       </div>
     </AnimatedSection>
+      );
+    })()
   );
 
   const renderMerch = () => (
+    (() => {
+      const overrides = getOverrides('merch');
+      return (
     <AnimatedSection
       key="merch"
       id="merch"
@@ -350,19 +784,35 @@ export function HorizonTemplate({
               <ShoppingBag className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 text-lg">Official Merchandise</h3>
-              <p className="text-slate-500 text-sm mt-0.5">Get exclusive event merchandise and collectibles</p>
+              {editableText('merch', 'heading', overrides.heading || 'Official Merchandise', {
+                as: 'h3',
+                className: 'font-bold text-slate-900 text-lg',
+              })}
+              {editableText('merch', 'subheading', overrides.subheading || 'Get exclusive event merchandise and collectibles', {
+                as: 'p',
+                className: 'text-slate-500 text-sm mt-0.5',
+              })}
             </div>
           </div>
-          <Link to={`/e/${slug}/merch`} className={cn('flex-shrink-0 px-8 py-3.5', btnClasses)} style={btnStyle(theme.accentColor)} onClick={(e) => e.stopPropagation()}>
-            <ShoppingBag className="w-4 h-4" /> Shop Now
+          <Link
+            to={`/e/${slug}/merch`}
+            className={cn('flex-shrink-0 px-8 py-3.5', btnClasses)}
+            style={getEditableButtonStyle('merch', btnStyle(theme.accentColor))}
+            {...getEditableButtonProps('merch', { sectionId: 'merch', field: 'buttonText', value: overrides.buttonText || 'Shop Now' })}
+          >
+            <ShoppingBag className="w-4 h-4" /> {editableText('merch', 'buttonText', overrides.buttonText || 'Shop Now', { as: 'span' })}
           </Link>
         </div>
       </div>
     </AnimatedSection>
+      );
+    })()
   );
 
   const renderForms = () => (
+    (() => {
+      const overrides = getOverrides('forms');
+      return (
     <AnimatedSection
       key="forms"
       id="forms"
@@ -377,19 +827,35 @@ export function HorizonTemplate({
               <FileText className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h3 className="font-bold text-slate-900 text-lg">Forms & Surveys</h3>
-              <p className="text-slate-500 text-sm mt-0.5">Share your thoughts and register interest</p>
+              {editableText('forms', 'heading', overrides.heading || 'Forms & Surveys', {
+                as: 'h3',
+                className: 'font-bold text-slate-900 text-lg',
+              })}
+              {editableText('forms', 'subheading', overrides.subheading || 'Share your thoughts and register interest', {
+                as: 'p',
+                className: 'text-slate-500 text-sm mt-0.5',
+              })}
             </div>
           </div>
-          <Link to={`/e/${slug}/forms`} className={cn('flex-shrink-0 px-8 py-3.5', btnClasses)} style={btnStyle(theme.primaryColor)} onClick={(e) => e.stopPropagation()}>
-            <FileText className="w-4 h-4" /> Open Forms
+          <Link
+            to={`/e/${slug}/forms`}
+            className={cn('flex-shrink-0 px-8 py-3.5', btnClasses)}
+            style={getEditableButtonStyle('forms', btnStyle(theme.primaryColor))}
+            {...getEditableButtonProps('forms', { sectionId: 'forms', field: 'buttonText', value: overrides.buttonText || 'Open Forms' })}
+          >
+            <FileText className="w-4 h-4" /> {editableText('forms', 'buttonText', overrides.buttonText || 'Open Forms', { as: 'span' })}
           </Link>
         </div>
       </div>
     </AnimatedSection>
+      );
+    })()
   );
 
   const renderGallery = () => (
+    (() => {
+      const overrides = getOverrides('gallery');
+      return (
     <AnimatedSection
       key="gallery"
       id="gallery"
@@ -398,11 +864,19 @@ export function HorizonTemplate({
     >
       <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>Gallery</p>
       <div className="flex items-end justify-between mb-8">
-        <h2 className="text-3xl font-bold text-slate-900" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>Event Media</h2>
+        {editableText('gallery', 'heading', overrides.heading || 'Event Media', {
+          as: 'h2',
+          className: 'text-3xl font-bold text-slate-900',
+          style: { fontFamily: theme.headingFont + ', sans-serif' },
+        })}
         <Link to={`/e/${slug}/gallery`} className="text-sm font-semibold flex items-center gap-1 hover:gap-2 transition-all" style={{ color: theme.primaryColor }} onClick={(e) => e.stopPropagation()}>
           View all <ExternalLink className="w-3.5 h-3.5" />
         </Link>
       </div>
+      {overrides.subheading && editableText('gallery', 'subheading', overrides.subheading, {
+        as: 'p',
+        className: 'text-slate-500 text-sm mb-6',
+      })}
       <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
         {GALLERY_PLACEHOLDER_IMAGES.map((img, i) => (
           <div key={i} className="aspect-[4/3] overflow-hidden group" style={{ borderRadius: getRadius(theme.borderRadius) }}>
@@ -411,14 +885,24 @@ export function HorizonTemplate({
         ))}
       </div>
       <div className="mt-6 text-center">
-        <Link to={`/e/${slug}/gallery`} className={cn('px-8 py-3.5', btnClasses)} style={btnStyle(theme.primaryColor)} onClick={(e) => e.stopPropagation()}>
-          <Image className="w-4 h-4" /> View All Photos
+        <Link
+          to={`/e/${slug}/gallery`}
+          className={cn('px-8 py-3.5', btnClasses)}
+          style={getEditableButtonStyle('gallery', btnStyle(theme.primaryColor))}
+          {...getEditableButtonProps('gallery', { sectionId: 'gallery', field: 'buttonText', value: overrides.buttonText || 'View All Photos' })}
+        >
+          <Image className="w-4 h-4" /> {editableText('gallery', 'buttonText', overrides.buttonText || 'View All Photos', { as: 'span' })}
         </Link>
       </div>
     </AnimatedSection>
+      );
+    })()
   );
 
   const renderFaq = () => (
+    (() => {
+      const overrides = getOverrides('faq');
+      return (
     <AnimatedSection
       key="faq"
       id="faq"
@@ -426,7 +910,15 @@ export function HorizonTemplate({
       className={cn('py-16 border-b border-slate-100', sectionStyle(selectedSection === 'faq'))}
     >
       <p className="text-xs font-bold uppercase tracking-widest mb-3" style={{ color: theme.primaryColor }}>FAQ</p>
-      <h2 className="text-3xl font-bold text-slate-900 mb-8" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>Frequently Asked Questions</h2>
+      {editableText('faq', 'heading', overrides.heading || 'Frequently Asked Questions', {
+        as: 'h2',
+        className: 'text-3xl font-bold text-slate-900 mb-8',
+        style: { fontFamily: theme.headingFont + ', sans-serif' },
+      })}
+      {overrides.subheading && editableText('faq', 'subheading', overrides.subheading, {
+        as: 'p',
+        className: 'text-slate-500 text-sm mb-6',
+      })}
       <div className="space-y-4">
         {[
           { q: 'How do I get my ticket?', a: 'Tickets are delivered to your email after purchase. You can also find them in your Munar account.' },
@@ -440,6 +932,8 @@ export function HorizonTemplate({
         ))}
       </div>
     </AnimatedSection>
+      );
+    })()
   );
 
   const renderCustomBlock = (block: CustomBlock) => {
@@ -614,14 +1108,17 @@ export function HorizonTemplate({
         >
           <div className="max-w-5xl mx-auto px-6 sm:px-8 h-14 flex items-center justify-between gap-6">
             <div className="flex items-center gap-3 min-w-0">
-              {config.logoUrl ? (
-                <img src={config.logoUrl} alt="Logo" className="h-8 w-auto object-contain flex-shrink-0" />
+              {config.logoAsset?.url || config.logoUrl ? (
+                <img src={config.logoAsset?.url || config.logoUrl} alt="Logo" className="h-8 w-auto object-contain flex-shrink-0" />
               ) : event.branding?.logo ? (
                 <img src={event.branding.logo} alt="Logo" className="h-8 w-auto object-contain flex-shrink-0" />
               ) : (
                 <div className="w-8 h-8 flex-shrink-0" style={{ backgroundColor: theme.primaryColor, borderRadius: getRadius(theme.borderRadius, 'sm') }} />
               )}
-              <span className="text-sm font-bold text-slate-900 truncate hidden sm:block">{event.name}</span>
+              {editableText('hero', 'description', getOverrides('hero').description || event.name, {
+                as: 'span',
+                className: 'text-sm font-bold text-slate-900 truncate hidden sm:block',
+              })}
             </div>
             <div className="hidden md:flex items-center gap-5 text-sm font-medium">
               {isVisible('about') && <a href="#about" className="text-slate-500 hover:text-slate-900 transition-colors">About</a>}
@@ -631,12 +1128,19 @@ export function HorizonTemplate({
             </div>
             {isVisible('tickets') && (
               <Link
-                to={`/e/${slug}/tickets`}
+                to={ticketsUrl}
                 className={cn('flex-shrink-0 px-5 py-2 text-xs font-semibold', btnClasses)}
-                style={btnStyle(theme.primaryColor)}
-                onClick={(e) => e.stopPropagation()}
+                style={getEditableButtonStyle('hero', btnStyle(theme.primaryColor))}
+                {...getEditableButtonProps('hero', {
+                  sectionId: 'hero',
+                  field: 'buttonText',
+                  value: getOverrides('hero').buttonText || 'Tickets',
+                  elementId: 'cta',
+                  elementLabel: 'Hero CTA',
+                  defaultElementOrder: ['logo', 'badge', 'heading', 'subheading', 'meta', 'cta'],
+                })}
               >
-                <Ticket className="w-3.5 h-3.5" /> Tickets
+                <Ticket className="w-3.5 h-3.5" /> {editableText('hero', 'buttonText', getOverrides('hero').buttonText || 'Tickets', { as: 'span' })}
               </Link>
             )}
           </div>
@@ -645,45 +1149,105 @@ export function HorizonTemplate({
 
       {/* ── HERO SECTION ─────────────────────────────────────────────── */}
       {isVisible('hero') && (
+        (() => {
+          const overrides = getOverrides('hero');
+          return withSectionFrame('hero', (
         <section
           onClick={() => handleClick('hero')}
           className={cn('relative', sectionStyle(selectedSection === 'hero'))}
+          style={getSectionSpacingStyle('hero')}
         >
           <div className="relative overflow-hidden" style={{ minHeight: 480 }}>
-            {event.coverImageUrl ? (
-              <img src={event.coverImageUrl} alt={event.name} className="absolute inset-0 w-full h-full object-cover" />
+            {(overrides.heroImage?.url || event.coverImageUrl) ? (
+              <img src={overrides.heroImage?.url || event.coverImageUrl} alt={overrides.heroImage?.altText || event.name} className="absolute inset-0 w-full h-full object-cover" />
             ) : (
               <div className="absolute inset-0" style={{ background: `linear-gradient(135deg, ${theme.primaryColor}ee 0%, ${theme.secondaryColor}cc 100%)` }} />
             )}
-            <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-black/30 to-transparent" />
-            <div className="relative z-10 max-w-5xl mx-auto px-6 sm:px-8 py-24 flex flex-col justify-end" style={{ minHeight: 480 }}>
-              {event.branding?.logo && (
-                <img src={event.branding.logo} alt="Logo" className="w-14 h-14 object-contain mb-5 shadow-lg" style={{ borderRadius: getRadius(theme.borderRadius) }} />
-              )}
-              <div className="mb-4">
-                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase"
-                  style={{ backgroundColor: `${theme.accentColor}33`, color: theme.accentColor, border: `1px solid ${theme.accentColor}55` }}>
-                  {event.status === 'published' ? 'Live' : 'Coming Soon'}
-                </span>
-              </div>
-              <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-4 max-w-2xl" style={{ fontFamily: theme.headingFont + ', sans-serif' }}>
-                {event.name}
-              </h1>
-              <div className="flex flex-wrap gap-5 text-white/80 text-sm mb-8">
-                {event.date && <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4" style={{ color: theme.accentColor }} />{event.date}</span>}
-                {event.time && <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" style={{ color: theme.accentColor }} />{event.time}</span>}
-                {(event.venueLocation || event.country) && <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4" style={{ color: theme.accentColor }} />{event.venueLocation || event.country}</span>}
-              </div>
-              {isVisible('tickets') && (
-                <div className="flex gap-3 flex-wrap">
-                  <Link to={`/e/${slug}/tickets`} className={cn('px-9 py-4 shadow-lg', btnClasses)} style={btnStyle(theme.primaryColor)} onClick={(e) => e.stopPropagation()}>
-                    <Ticket className="w-4 h-4" /> Get Tickets
-                  </Link>
-                </div>
-              )}
+            <div className="absolute inset-0" style={getHeroOverlayStyle(overrides)} />
+            <div className="relative z-10 max-w-5xl px-6 py-24 sm:px-8 flex flex-col justify-end" style={{ minHeight: 480, ...getSectionContentStyle('hero') }}>
+              {renderOrderedElements('hero', [
+                {
+                  id: 'logo',
+                  node: event.branding?.logo ? (
+                    <img src={event.branding.logo} alt="Logo" className="w-14 h-14 object-contain mb-5 shadow-lg" style={{ borderRadius: getRadius(theme.borderRadius) }} />
+                  ) : null,
+                },
+                {
+                  id: 'badge',
+                  node: (
+                    <div className="mb-4">
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold tracking-wide uppercase"
+                        style={{ backgroundColor: `${theme.accentColor}33`, color: theme.accentColor, border: `1px solid ${theme.accentColor}55` }}>
+                        {event.status === 'published' ? 'Live' : 'Coming Soon'}
+                      </span>
+                    </div>
+                  ),
+                },
+                {
+                  id: 'heading',
+                  node: editableText('hero', 'heading', overrides.heading || event.name, {
+                    as: 'h1',
+                    className: 'text-4xl sm:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-4 max-w-2xl',
+                    style: { fontFamily: theme.headingFont + ', sans-serif' },
+                    elementId: 'heading',
+                    elementLabel: 'Hero Heading',
+                    defaultElementOrder: ['logo', 'badge', 'heading', 'subheading', 'meta', 'cta'],
+                  }),
+                },
+                {
+                  id: 'subheading',
+                  node: overrides.subheading ? editableText('hero', 'subheading', overrides.subheading, {
+                    as: 'p',
+                    className: 'text-white/80 text-lg max-w-2xl mb-6',
+                    multiline: true,
+                    elementId: 'subheading',
+                    elementLabel: 'Hero Subheading',
+                    defaultElementOrder: ['logo', 'badge', 'heading', 'subheading', 'meta', 'cta'],
+                  }) : null,
+                },
+                {
+                  id: 'meta',
+                  node: (
+                    <div className="flex flex-wrap gap-5 text-white/80 text-sm mb-8">
+                      {event.date && <span className="flex items-center gap-1.5"><Calendar className="w-4 h-4" style={{ color: theme.accentColor }} />{event.date}</span>}
+                      {event.time && <span className="flex items-center gap-1.5"><Clock className="w-4 h-4" style={{ color: theme.accentColor }} />{event.time}</span>}
+                      {(event.venueLocation || event.country) && <span className="flex items-center gap-1.5"><MapPin className="w-4 h-4" style={{ color: theme.accentColor }} />{event.venueLocation || event.country}</span>}
+                    </div>
+                  ),
+                },
+                {
+                  id: 'cta',
+                  node: isVisible('tickets') ? (
+                    <div className="mb-4 flex flex-wrap gap-3 sm:mb-6">
+                      <Link
+                        to={ticketsUrl}
+                        className={cn('px-9 py-4 shadow-lg', btnClasses)}
+                        style={getEditableButtonStyle('hero', btnStyle(theme.primaryColor))}
+                        {...getEditableButtonProps('hero', {
+                          sectionId: 'hero',
+                          field: 'buttonText',
+                          value: overrides.buttonText || 'Get Tickets',
+                          elementId: 'cta',
+                          elementLabel: 'Hero CTA',
+                          defaultElementOrder: ['logo', 'badge', 'heading', 'subheading', 'meta', 'cta'],
+                        })}
+                      >
+                        <Ticket className="w-4 h-4" /> {editableText('hero', 'buttonText', overrides.buttonText || 'Get Tickets', {
+                          as: 'span',
+                          elementId: 'cta',
+                          elementLabel: 'Hero CTA',
+                          defaultElementOrder: ['logo', 'badge', 'heading', 'subheading', 'meta', 'cta'],
+                        })}
+                      </Link>
+                    </div>
+                  ) : null,
+                },
+              ])}
             </div>
           </div>
         </section>
+          ));
+        })()
       )}
 
       {/* ── DYNAMICALLY ORDERED CONTENT SECTIONS ──────────────────────── */}
@@ -715,7 +1279,7 @@ export function HorizonTemplate({
               <div className="flex flex-col items-start sm:items-end gap-3">
                 <div className="flex flex-wrap gap-3 text-sm">
                   {isVisible('tickets') && (
-                    <Link to={`/e/${slug}/tickets`} className="font-medium hover:opacity-80 transition-opacity" style={{ color: theme.accentColor }} onClick={(e) => e.stopPropagation()}>Get Tickets</Link>
+                    <Link to={ticketsUrl} className="font-medium hover:opacity-80 transition-opacity" style={{ color: theme.accentColor }} onClick={(e) => e.stopPropagation()}>Get Tickets</Link>
                   )}
                   {isVisible('forms') && (
                     <Link to={`/e/${slug}/forms`} className="text-slate-400 hover:text-white transition-colors" onClick={(e) => e.stopPropagation()}>Forms</Link>

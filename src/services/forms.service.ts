@@ -1,17 +1,15 @@
-// Forms Service
 import { config } from '../config';
 import { apiClient } from '../lib/api-client';
 import {
   ApiResponse,
   PaginatedResponse,
   SearchParams,
-  MutationResponse,
   BackendFormResponse,
   CreateBackendFormRequest,
   FormSubmissionResponse,
   SubmitFormRequest,
 } from '../types/api';
-import { Form, FormField, FormResponse, FormSettings } from '../components/event-dashboard/types';
+import { Form, FormField, FormFieldType, FormResponse, FormSettings } from '../components/event-dashboard/types';
 import { delay, mockForms, mockFormResponses, generateId } from './mock/data';
 
 export interface CreateFormRequest {
@@ -25,14 +23,58 @@ export interface CreateFormRequest {
 export interface PublicFormSubmitRequest {
   respondentName?: string;
   respondentEmail?: string;
-  answers: Record<string, any>;
-  /** Optional: pass elapsed seconds so analytics can compute avg time */
-  metadata?: { timeToComplete?: number; [key: string]: any };
+  answers: Record<string, unknown>;
+  metadata?: { timeToComplete?: number; [key: string]: unknown };
+}
+
+export interface FormAnalyticsSummary {
+  totalSubmissions: number;
+  completedSubmissions: number;
+  partialSubmissions: number;
+  completionRate: number;
+  submissionsByDay: Array<{ date: string; count: number }>;
+  paymentSummary?: {
+    paid?: number;
+    pending?: number;
+    failed?: number;
+    revenueMinor?: number;
+    currency?: string;
+  };
+  fieldSummaries?: Array<{
+    fieldId: string;
+    label: string;
+    valueCounts: Array<{ value: string; count: number }>;
+  }>;
 }
 
 export interface UpdateFormRequest extends Partial<CreateFormRequest> {
-  status?: 'draft' | 'published' | 'closed' | 'scheduled';
+  status?: 'draft' | 'published' | 'closed' | 'archived';
 }
+
+type BackendSchemaField = {
+  id: string;
+  type: string;
+  label?: string;
+  required?: boolean;
+  placeholder?: string;
+  helpText?: string;
+  options?: string[];
+  validation?: {
+    min?: number;
+    max?: number;
+    pattern?: string;
+  };
+};
+
+type MaybeWrapped<T> = ApiResponse<T> | T;
+type SubmissionListPayload =
+  | FormSubmissionResponse[]
+  | {
+      data?: FormSubmissionResponse[];
+      submissions?: FormSubmissionResponse[];
+      items?: FormSubmissionResponse[];
+      meta?: Partial<PaginatedResponse<FormResponse>['meta']>;
+    };
 
 function mapFormType(type: string): Form['type'] {
   switch (type) {
@@ -54,11 +96,32 @@ function mapFormStatus(status: string): Form['status'] {
     case 'CLOSED':
       return 'closed';
     case 'ARCHIVED':
-      return 'closed';
+      return 'archived';
     case 'DRAFT':
     default:
       return 'draft';
   }
+}
+
+function normalizeFieldType(type: string): FormFieldType {
+  const normalized = type.toLowerCase();
+  if (
+    normalized === 'text' ||
+    normalized === 'textarea' ||
+    normalized === 'email' ||
+    normalized === 'phone' ||
+    normalized === 'number' ||
+    normalized === 'date' ||
+    normalized === 'select' ||
+    normalized === 'multiselect' ||
+    normalized === 'checkbox' ||
+    normalized === 'radio' ||
+    normalized === 'rating' ||
+    normalized === 'file'
+  ) {
+    return normalized;
+  }
+  return 'text';
 }
 
 function inferFieldType(value: unknown): FormField['type'] {
@@ -67,43 +130,131 @@ function inferFieldType(value: unknown): FormField['type'] {
   return 'text';
 }
 
-function formFromBackend(form: BackendFormResponse): Form {
-  const schema = form.schemaJson || {};
-  const properties = (schema.properties || {}) as Record<string, any>;
-  const required = new Set(Array.isArray(schema.required) ? schema.required : []);
-  const fields: FormField[] = Object.entries(properties).map(([id, field]) => ({
+function schemaFieldsFromBackend(schemaJson: Record<string, unknown>): BackendSchemaField[] {
+  const fields = schemaJson.fields;
+  if (Array.isArray(fields)) {
+    return fields
+      .filter((field): field is BackendSchemaField => !!field && typeof field === 'object')
+      .map((field) => ({
+        id: String(field.id || ''),
+        type: String(field.type || 'text'),
+        label: typeof field.label === 'string' ? field.label : undefined,
+        required: Boolean(field.required),
+        placeholder: typeof field.placeholder === 'string' ? field.placeholder : undefined,
+        helpText:
+          typeof field.helpText === 'string'
+            ? field.helpText
+            : typeof field.description === 'string'
+              ? field.description
+              : undefined,
+        options:
+          Array.isArray(field.options) && field.options.every((option) => typeof option === 'string')
+            ? (field.options as string[])
+            : undefined,
+        validation:
+          field.validation && typeof field.validation === 'object'
+            ? {
+                min: typeof field.validation.min === 'number' ? field.validation.min : undefined,
+                max: typeof field.validation.max === 'number' ? field.validation.max : undefined,
+                pattern: typeof field.validation.pattern === 'string' ? field.validation.pattern : undefined,
+              }
+            : undefined,
+      }))
+      .filter((field) => field.id);
+  }
+
+  const properties = (schemaJson.properties || {}) as Record<string, Record<string, unknown>>;
+  const required = new Set(Array.isArray(schemaJson.required) ? schemaJson.required.map(String) : []);
+  return Object.entries(properties).map(([id, field]) => ({
     id,
-    type: field['x-fieldType'] || inferFieldType(field.default),
-    label: field.title || id,
-    placeholder: field.placeholder,
-    helpText: field.description,
+    type: typeof field['x-fieldType'] === 'string' ? String(field['x-fieldType']) : inferFieldType(field.default),
+    label: typeof field.title === 'string' ? field.title : id,
+    placeholder: typeof field.placeholder === 'string' ? field.placeholder : undefined,
+    helpText: typeof field.description === 'string' ? field.description : undefined,
     required: required.has(id),
-    options: Array.isArray(field.enum) ? field.enum : undefined,
+    options:
+      Array.isArray(field.enum) && field.enum.every((option) => typeof option === 'string')
+        ? (field.enum as string[])
+        : undefined,
     validation: {
-      min: field.minimum,
-      max: field.maximum,
-      pattern: field.pattern,
+      min: typeof field.minimum === 'number' ? field.minimum : undefined,
+      max: typeof field.maximum === 'number' ? field.maximum : undefined,
+      pattern: typeof field.pattern === 'string' ? field.pattern : undefined,
     },
   }));
+}
 
-  const schedule = (form.scheduleJson || {}) as Record<string, any>;
-  const payment = (form.paymentConfigJson || {}) as Record<string, any>;
+function toIsoDateTime(value?: string): string | undefined {
+  if (!value) return undefined;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toISOString();
+}
+
+function inferRespondentDetails(answers: Record<string, unknown>) {
+  const entries = Object.entries(answers);
+  const nameEntry = entries.find(([key, value]) => {
+    if (typeof value !== 'string' || !value.trim()) return false;
+    const normalizedKey = key.toLowerCase();
+    return normalizedKey.includes('name') || normalizedKey === 'respondentname';
+  });
+  const emailEntry = entries.find(([, value]) => typeof value === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value));
+
+  return {
+    respondentName: typeof nameEntry?.[1] === 'string' ? nameEntry[1] : undefined,
+    respondentEmail: typeof emailEntry?.[1] === 'string' ? emailEntry[1] : undefined,
+  };
+}
+
+function mapPaymentStatus(paymentStatus: FormSubmissionResponse['paymentStatus']): FormResponse['paymentStatus'] {
+  switch (paymentStatus) {
+    case 'AUTHORIZED':
+    case 'CAPTURED':
+      return 'paid';
+    case 'PENDING':
+      return 'pending';
+    case 'FAILED':
+    case 'REVERSED':
+    case 'REFUNDED':
+      return 'failed';
+    default:
+      return 'n/a';
+  }
+}
+
+function formFromBackend(form: BackendFormResponse): Form {
+  const schema = (form.schemaJson || {}) as Record<string, unknown>;
+  const schedule = (form.scheduleJson || {}) as Record<string, unknown>;
+  const payment = (form.paymentConfigJson || {}) as Record<string, unknown>;
+  const access = (form.accessControlJson || {}) as Record<string, unknown>;
+  const branding = (form.brandingJson || {}) as Record<string, unknown>;
+  const fields = schemaFieldsFromBackend(schema).map<FormField>((field) => ({
+    id: field.id,
+    type: normalizeFieldType(field.type),
+    label: field.label || field.id,
+    placeholder: field.placeholder,
+    helpText: field.helpText,
+    required: Boolean(field.required),
+    options: field.options,
+    validation: field.validation,
+  }));
 
   return {
     id: form.id,
     title: form.title,
-    description: (form.brandingJson?.description as string) || '',
+    description: typeof branding.description === 'string' ? branding.description : '',
     type: mapFormType(form.formType),
     status: mapFormStatus(form.status),
     fields,
     settings: {
-      isPaid: !!payment.enabled,
+      isPaid: Boolean(payment.enabled),
       price: typeof payment.amountMinor === 'number' ? payment.amountMinor / 100 : undefined,
-      currency: payment.currency as string | undefined,
-      allowAnonymous: !!(form.accessControlJson as Record<string, any> | null)?.allowAnonymous,
-      oneResponsePerUser: !((form.accessControlJson as Record<string, any> | null)?.allowMultipleSubmissions),
-      closeDate: schedule.closesAt,
-      confirmationMessage: (form.brandingJson?.confirmationMessage as string) || undefined,
+      currency: typeof payment.currency === 'string' ? payment.currency : undefined,
+      allowAnonymous: Boolean(access.allowAnonymous),
+      oneResponsePerUser: !Boolean(access.allowMultipleSubmissions),
+      closeDate: typeof schedule.closesAt === 'string' ? schedule.closesAt : undefined,
+      confirmationMessage:
+        typeof branding.confirmationMessage === 'string' ? branding.confirmationMessage : undefined,
     },
     responseCount: 0,
     createdAt: form.createdAt,
@@ -112,96 +263,158 @@ function formFromBackend(form: BackendFormResponse): Form {
 }
 
 function toBackendFormPayload(data: CreateFormRequest | UpdateFormRequest): CreateBackendFormRequest {
-  const schemaJson = {
-    type: 'object',
-    properties: Object.fromEntries(
-      (data.fields || []).map((field) => [
-        field.id,
-        {
-          title: field.label,
-          description: field.helpText,
-          placeholder: field.placeholder,
-          enum: field.options,
-          minimum: field.validation?.min,
-          maximum: field.validation?.max,
-          pattern: field.validation?.pattern,
-          default: field.type === 'checkbox' ? [] : '',
-          'x-fieldType': field.type,
-        },
-      ]),
-    ),
-    required: (data.fields || []).filter((field) => field.required).map((field) => field.id),
-  };
+  const fields = (data.fields || []).map((field) => ({
+    id: field.id,
+    type: field.type,
+    label: field.label,
+    required: field.required,
+    placeholder: field.placeholder,
+    helpText: field.helpText,
+    options: field.options?.filter(Boolean),
+    validation: {
+      min: field.validation?.min,
+      max: field.validation?.max,
+      pattern: field.validation?.pattern,
+    },
+  }));
+
+  const closeDate = toIsoDateTime(data.settings?.closeDate);
+  const allowAnonymous = data.settings?.allowAnonymous ?? false;
+  const oneResponsePerUser = data.settings?.oneResponsePerUser ?? true;
+  const isPaid = data.settings?.isPaid ?? false;
 
   return {
     title: data.title || 'Untitled Form',
-    formType: data.type === 'registration' ? 'REGISTRATION' : data.type === 'survey' ? 'SURVEY' : 'CUSTOM',
-    schemaJson,
-    scheduleJson: data.settings?.closeDate ? { closesAt: data.settings.closeDate } : undefined,
+    formType:
+      data.type === 'registration'
+        ? 'REGISTRATION'
+        : data.type === 'survey'
+          ? 'SURVEY'
+          : 'CUSTOM',
+    schemaJson: {
+      fields,
+    },
+    logicJson: {
+      version: 1,
+    },
+    paymentConfigJson: isPaid
+      ? {
+          enabled: true,
+          amountMinor: Math.round((data.settings?.price || 0) * 100),
+          currency: data.settings?.currency || 'NGN',
+        }
+      : {
+          enabled: false,
+        },
+    scheduleJson: closeDate
+      ? {
+          closesAt: closeDate,
+        }
+      : undefined,
     accessControlJson: {
-      allowAnonymous: data.settings?.allowAnonymous ?? false,
-      allowMultipleSubmissions: !(data.settings?.oneResponsePerUser ?? true),
+      allowAnonymous,
+      allowMultipleSubmissions: !oneResponsePerUser,
+      requiresAuth: !allowAnonymous || oneResponsePerUser,
     },
     brandingJson: {
       description: data.description || '',
       confirmationMessage: data.settings?.confirmationMessage,
     },
-    paymentConfigJson: data.settings?.isPaid
-      ? {
-          enabled: true,
-          amountMinor: Math.round((data.settings.price || 0) * 100),
-          currency: data.settings.currency || 'NGN',
-        }
-      : undefined,
   };
 }
 
 function submissionToFormResponse(response: FormSubmissionResponse): FormResponse {
+  const inferred = inferRespondentDetails(response.answersJson || {});
   return {
     id: response.id,
     formId: response.formId,
+    respondentName: inferred.respondentName,
+    respondentEmail: inferred.respondentEmail,
     submittedAt: response.createdAt,
     answers: response.answersJson,
     status: response.status?.toLowerCase() === 'partial' ? 'partial' : 'completed',
-    paymentStatus: response.paymentStatus ? response.paymentStatus.toLowerCase() as FormResponse['paymentStatus'] : 'n/a',
+    paymentStatus: mapPaymentStatus(response.paymentStatus),
   };
 }
 
+function unwrapApiData<T>(payload: MaybeWrapped<T>): T {
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    return (payload as ApiResponse<T>).data;
+  }
+  return payload as T;
+}
+
+function normalizeSubmissionListPayload(payload: MaybeWrapped<SubmissionListPayload>) {
+  const unwrapped = unwrapApiData(payload);
+
+  if (Array.isArray(unwrapped)) {
+    return {
+      submissions: unwrapped,
+      meta: null,
+    };
+  }
+
+  if (unwrapped && typeof unwrapped === 'object') {
+    const list = Array.isArray(unwrapped.submissions)
+      ? unwrapped.submissions
+      : Array.isArray(unwrapped.items)
+        ? unwrapped.items
+        : Array.isArray(unwrapped.data)
+          ? unwrapped.data
+          : [];
+
+    return {
+      submissions: list,
+      meta: unwrapped.meta ?? null,
+    };
+  }
+
+  return {
+    submissions: [],
+    meta: null,
+  };
+}
+
+function extractAnalyticsPayload(payload: MaybeWrapped<FormAnalyticsSummary | { analytics?: FormAnalyticsSummary }>) {
+  const unwrapped = unwrapApiData(payload);
+  if (unwrapped && typeof unwrapped === 'object' && 'analytics' in unwrapped && unwrapped.analytics) {
+    return unwrapped.analytics;
+  }
+  return unwrapped as FormAnalyticsSummary;
+}
+
 class FormsService {
-  // Get all forms for an event
   async getForms(eventId: string, params?: SearchParams): Promise<Form[]> {
     if (config.features.useMockData) {
       await delay(400);
       return mockForms;
     }
 
-    const response = await apiClient.get<ApiResponse<BackendFormResponse[]>>(`/events/${eventId}/forms`, { params });
-    return response.data.map(formFromBackend);
+    const response = await apiClient.get<MaybeWrapped<BackendFormResponse[]>>(`/events/${eventId}/forms`, { params });
+    return unwrapApiData(response).map(formFromBackend);
   }
 
-  // Get single form
   async getForm(eventId: string, formId: string): Promise<Form> {
     if (config.features.useMockData) {
       await delay(300);
-      const form = mockForms.find(f => f.id === formId);
+      const form = mockForms.find((item) => item.id === formId);
       if (!form) throw new Error('Form not found');
       return form;
     }
 
-    const response = await apiClient.get<ApiResponse<BackendFormResponse>>(`/forms/${formId}`);
-    return formFromBackend(response.data);
+    const response = await apiClient.get<MaybeWrapped<BackendFormResponse>>(`/forms/${formId}`);
+    return formFromBackend(unwrapApiData(response));
   }
 
-  // Create form
   async createForm(eventId: string, data: CreateFormRequest): Promise<Form> {
     if (config.features.useMockData) {
       await delay(600);
-      
+
       const newForm: Form = {
         id: generateId('form'),
         title: data.title,
         description: data.description || '',
-        type: data.type,
+        type: data.type === 'feedback' ? 'custom' : data.type,
         status: 'draft',
         fields: data.fields,
         settings: {
@@ -214,77 +427,69 @@ class FormsService {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
-      
+
       mockForms.push(newForm);
       return newForm;
     }
 
-    const response = await apiClient.post<ApiResponse<BackendFormResponse>>(
+    const response = await apiClient.post<MaybeWrapped<BackendFormResponse>>(
       `/events/${eventId}/forms`,
       toBackendFormPayload(data),
     );
-    return formFromBackend(response.data);
+    return formFromBackend(unwrapApiData(response));
   }
 
-  // Update form
   async updateForm(eventId: string, formId: string, data: UpdateFormRequest): Promise<Form> {
     if (config.features.useMockData) {
       await delay(400);
-      
-      const index = mockForms.findIndex(f => f.id === formId);
+
+      const index = mockForms.findIndex((item) => item.id === formId);
       if (index === -1) throw new Error('Form not found');
-      
-      mockForms[index] = { 
-        ...mockForms[index], 
+
+      mockForms[index] = {
+        ...mockForms[index],
         ...data,
         updatedAt: new Date().toISOString(),
       } as Form;
       return mockForms[index];
     }
 
-    const response = await apiClient.patch<ApiResponse<BackendFormResponse>>(
+    const response = await apiClient.patch<MaybeWrapped<BackendFormResponse>>(
       `/forms/${formId}`,
       toBackendFormPayload(data),
     );
-    return formFromBackend(response.data);
+    return formFromBackend(unwrapApiData(response));
   }
 
-  // Delete form
-  async deleteForm(eventId: string, formId: string): Promise<MutationResponse> {
+  async deleteForm(eventId: string, formId: string) {
     if (config.features.useMockData) {
       await delay(400);
-      
-      const index = mockForms.findIndex(f => f.id === formId);
+      const index = mockForms.findIndex((item) => item.id === formId);
       if (index !== -1) mockForms.splice(index, 1);
-      
       return { success: true, message: 'Form deleted successfully' };
     }
 
-    return apiClient.delete<MutationResponse>(`/forms/${formId}`);
+    return apiClient.delete<{ success: boolean; deleted: boolean; id: string }>(`/forms/${formId}`);
   }
 
-  // Duplicate form
-  async duplicateForm(eventId: string, formId: string): Promise<Form> {
+  async archiveForm(eventId: string, formId: string): Promise<Form> {
     if (config.features.useMockData) {
-      await delay(500);
-      
-      const original = mockForms.find(f => f.id === formId);
-      if (!original) throw new Error('Form not found');
-      
-      const duplicated: Form = {
-        ...original,
-        id: generateId('form'),
-        title: `${original.title} (Copy)`,
-        status: 'draft',
-        responseCount: 0,
-        createdAt: new Date().toISOString(),
+      await delay(300);
+      const index = mockForms.findIndex((item) => item.id === formId);
+      if (index === -1) throw new Error('Form not found');
+      mockForms[index] = {
+        ...mockForms[index],
+        status: 'archived',
         updatedAt: new Date().toISOString(),
       };
-      
-      mockForms.push(duplicated);
-      return duplicated;
+      return mockForms[index];
     }
 
+    const response = await apiClient.post<MaybeWrapped<BackendFormResponse>>(`/forms/${formId}/archive`);
+    return formFromBackend(unwrapApiData(response));
+  }
+
+  async duplicateForm(eventId: string, formId: string): Promise<Form> {
     const form = await this.getForm(eventId, formId);
     return this.createForm(eventId, {
       title: `${form.title} (Copy)`,
@@ -295,27 +500,21 @@ class FormsService {
     });
   }
 
-  // Publish form
   async publishForm(eventId: string, formId: string): Promise<Form> {
-    const response = await apiClient.post<ApiResponse<BackendFormResponse>>(`/forms/${formId}/publish`);
-    return formFromBackend(response.data);
+    const response = await apiClient.post<MaybeWrapped<BackendFormResponse>>(`/forms/${formId}/publish`);
+    return formFromBackend(unwrapApiData(response));
   }
 
-  // Close form
   async closeForm(eventId: string, formId: string): Promise<Form> {
-    const response = await apiClient.post<ApiResponse<BackendFormResponse>>(`/forms/${formId}/close`);
-    return formFromBackend(response.data);
+    const response = await apiClient.post<MaybeWrapped<BackendFormResponse>>(`/forms/${formId}/close`);
+    return formFromBackend(unwrapApiData(response));
   }
 
-  // ========== RESPONSES ==========
-
-  // Get form responses
   async getResponses(eventId: string, formId: string, params?: SearchParams): Promise<PaginatedResponse<FormResponse>> {
     if (config.features.useMockData) {
       await delay(500);
-      
-      const responses = mockFormResponses.filter(r => r.formId === formId);
-      
+
+      const responses = mockFormResponses.filter((item) => item.formId === formId);
       return {
         data: responses,
         meta: {
@@ -329,92 +528,113 @@ class FormsService {
       };
     }
 
-    const response = await apiClient.get<ApiResponse<FormSubmissionResponse[]>>(`/forms/${formId}/submissions`, { params });
-    const data = response.data.map(submissionToFormResponse);
+    const submissionParams = {
+      status: params?.search,
+    };
+
+    const response = await apiClient.get<MaybeWrapped<SubmissionListPayload>>(`/forms/${formId}/submissions`, {
+      params: submissionParams,
+    });
+    const { submissions, meta } = normalizeSubmissionListPayload(response);
+    const data = submissions.map(submissionToFormResponse);
+    const requestedPage = params?.page || 1;
+    const requestedLimit = params?.limit || data.length || 20;
+
     return {
       data,
       meta: {
-        currentPage: params?.page || 1,
-        totalPages: 1,
-        totalItems: data.length,
-        itemsPerPage: data.length || params?.limit || 20,
-        hasNextPage: false,
-        hasPreviousPage: false,
+        currentPage: meta?.currentPage || requestedPage,
+        totalPages: meta?.totalPages || 1,
+        totalItems: meta?.totalItems || data.length,
+        itemsPerPage: meta?.itemsPerPage || requestedLimit,
+        hasNextPage: meta?.hasNextPage || false,
+        hasPreviousPage: meta?.hasPreviousPage || false,
       },
     };
   }
 
-  // Get single response
   async getResponse(eventId: string, formId: string, responseId: string): Promise<FormResponse> {
     if (config.features.useMockData) {
       await delay(300);
-      const response = mockFormResponses.find(r => r.id === responseId);
+      const response = mockFormResponses.find((item) => item.id === responseId);
       if (!response) throw new Error('Response not found');
       return response;
     }
 
-    const response = await apiClient.get<ApiResponse<FormSubmissionResponse>>(`/forms/${formId}/submissions/${responseId}`);
-    return submissionToFormResponse(response.data);
+    const response = await apiClient.get<MaybeWrapped<FormSubmissionResponse>>(`/forms/${formId}/submissions/${responseId}`);
+    return submissionToFormResponse(unwrapApiData(response));
   }
 
-  // Delete response
-  async deleteResponse(eventId: string, formId: string, responseId: string): Promise<MutationResponse> {
+  async deleteResponse(eventId: string, formId: string, responseId: string) {
     if (config.features.useMockData) {
       await delay(300);
-      
-      const index = mockFormResponses.findIndex(r => r.id === responseId);
+      const index = mockFormResponses.findIndex((item) => item.id === responseId);
       if (index !== -1) mockFormResponses.splice(index, 1);
-      
       return { success: true, message: 'Response deleted successfully' };
     }
 
-    return apiClient.delete<MutationResponse>(`/forms/${formId}/submissions/${responseId}`);
+    return apiClient.delete<{ success?: boolean; message?: string }>(`/form-submissions/${responseId}`);
   }
 
-  // Export responses
-  async exportResponses(eventId: string, formId: string, format: 'csv' | 'xlsx' = 'csv'): Promise<Blob> {
+  async exportResponses(eventId: string, formId: string, format: 'csv' | 'xlsx' = 'csv') {
     if (config.features.useMockData) {
       await delay(800);
-      
-      const form = mockForms.find(f => f.id === formId);
-      const responses = mockFormResponses.filter(r => r.formId === formId);
-      
-      // Create mock CSV
-      const headers = ['Submitted At', 'Name', 'Email', ...(form?.fields.map(f => f.label) || [])].join(',');
-      const rows = responses.map(r => {
-        const answers = form?.fields.map(f => r.answers[f.id] || '').join(',') || '';
-        return `${r.submittedAt},${r.respondentName || ''},${r.respondentEmail || ''},${answers}`;
-      }).join('\n');
-      
+
+      const form = mockForms.find((item) => item.id === formId);
+      const responses = mockFormResponses.filter((item) => item.formId === formId);
+      const headers = ['Submitted At', 'Name', 'Email', ...(form?.fields.map((field) => field.label) || [])].join(',');
+      const rows = responses
+        .map((response) => {
+          const answers = form?.fields.map((field) => response.answers[field.id] || '').join(',') || '';
+          return `${response.submittedAt},${response.respondentName || ''},${response.respondentEmail || ''},${answers}`;
+        })
+        .join('\n');
+
       return new Blob([headers + '\n' + rows], { type: 'text/csv' });
     }
 
-    const response = await fetch(`${config.api.baseUrl}/events/${eventId}/forms/${formId}/responses/export?format=${format}`, {
-      headers: {
-        'Authorization': `Bearer ${localStorage.getItem(config.auth.tokenKey)}`,
-      },
+    const token = localStorage.getItem(config.auth.tokenKey);
+    const response = await fetch(`${config.api.baseUrl}/forms/${formId}/submissions/export?format=${format}`, {
+      headers: token
+        ? {
+            Authorization: `Bearer ${token}`,
+          }
+        : undefined,
     });
-    
+
+    if (!response.ok) {
+      let message = `Failed to export responses (${response.status})`;
+      const contentType = response.headers.get('content-type') || '';
+
+      if (contentType.includes('application/json')) {
+        const errorData = await response.json().catch(() => null);
+        if (errorData?.message) {
+          message = Array.isArray(errorData.message) ? errorData.message.join(', ') : errorData.message;
+        }
+      } else {
+        const text = await response.text().catch(() => '');
+        if (text) {
+          message = text;
+        }
+      }
+
+      throw new Error(message);
+    }
+
     return response.blob();
   }
 
-  // Get form analytics
-  async getFormAnalytics(eventId: string, formId: string): Promise<{
-    totalResponses: number;
-    completionRate: number;
-    averageTimeToComplete: number;
-    responsesByDay: Array<{ date: string; count: number }>;
-  }> {
+  async getFormAnalytics(eventId: string, formId: string): Promise<FormAnalyticsSummary> {
     if (config.features.useMockData) {
       await delay(400);
-      
-      const form = mockForms.find(f => f.id === formId);
-      
+      const form = mockForms.find((item) => item.id === formId);
+
       return {
-        totalResponses: form?.responseCount || 0,
+        totalSubmissions: form?.responseCount || 0,
+        completedSubmissions: form?.responseCount || 0,
+        partialSubmissions: 0,
         completionRate: 87.5,
-        averageTimeToComplete: 180, // seconds
-        responsesByDay: [
+        submissionsByDay: [
           { date: '2026-01-20', count: 45 },
           { date: '2026-01-21', count: 32 },
           { date: '2026-01-22', count: 28 },
@@ -423,56 +643,32 @@ class FormsService {
       };
     }
 
-    const response = await apiClient.get<ApiResponse<any>>(`/events/${eventId}/forms/${formId}/analytics`);
-    return response.data;
+    const response = await apiClient.get<MaybeWrapped<FormAnalyticsSummary | { analytics?: FormAnalyticsSummary }>>(
+      `/forms/${formId}/analytics`,
+    );
+    return extractAnalyticsPayload(response);
   }
 
-  // ========== PUBLIC (no-auth) ==========
-
-  /** List published forms for an event by its public slug */
-  async getPublicForms(slug: string): Promise<{ event: { id: string; name: string }; forms: Form[] }> {
-    if (config.features.useMockData) {
-      await delay(400);
-      return { event: { id: 'mock-event', name: 'Mock Event' }, forms: mockForms.filter(f => f.status === 'published') };
-    }
-    const website = await apiClient.get<ApiResponse<any>>(`/public/events/${slug}/website`);
-    const eventId = website.data.event.id;
-    const forms = await this.getForms(eventId, { status: 'PUBLISHED' });
-    return { event: { id: eventId, name: website.data.event.title }, forms };
-  }
-
-  /** Get a single published form by event slug + form ID */
-  async getPublicFormBySlug(slug: string, formId: string): Promise<Form> {
-    if (config.features.useMockData) {
-      await delay(300);
-      const form = mockForms.find(f => f.id === formId);
-      if (!form) throw new Error('Form not found');
-      return form;
-    }
-    const website = await apiClient.get<ApiResponse<any>>(`/public/events/${slug}/website`);
-    if (!website.data?.event?.id) {
-      throw new Error('Event not found');
-    }
-    return this.getForm(website.data.event.id, formId);
-  }
-
-  /** Submit a response by event slug + form ID (no auth required) */
-  async submitPublicForm(slug: string, formId: string, data: PublicFormSubmitRequest): Promise<FormResponse> {
+  async submitAuthenticatedForm(formId: string, data: PublicFormSubmitRequest): Promise<FormResponse> {
     if (config.features.useMockData) {
       await delay(600);
-      const form = mockForms.find(f => f.id === formId);
+      const form = mockForms.find((item) => item.id === formId);
       if (!form) throw new Error('Form not found');
-      const newResponse = {
+
+      const newResponse: FormResponse = {
         id: generateId('resp'),
         formId,
         respondentName: data.respondentName,
         respondentEmail: data.respondentEmail,
         answers: data.answers,
         submittedAt: new Date().toISOString(),
-      } as FormResponse;
+        status: 'completed',
+        paymentStatus: 'n/a',
+      };
       mockFormResponses.push(newResponse);
       return newResponse;
     }
+
     const payload: SubmitFormRequest = {
       answersJson: {
         ...data.answers,
@@ -481,41 +677,58 @@ class FormsService {
         metadata: data.metadata,
       },
     };
-    const response = await apiClient.post<ApiResponse<FormSubmissionResponse>>(`/forms/${formId}/submissions`, payload);
-    return submissionToFormResponse(response.data);
+    const response = await apiClient.post<MaybeWrapped<FormSubmissionResponse>>(`/forms/${formId}/submissions`, payload);
+    return submissionToFormResponse(unwrapApiData(response));
   }
 
-  /** Get a published form by its share token */
-  async getPublicFormByToken(token: string): Promise<Form> {
+  async getPublicForms(slug: string) {
+    if (config.features.useMockData) {
+      await delay(400);
+      return {
+        event: { id: 'mock-event', name: 'Mock Event' },
+        forms: mockForms.filter((form) => form.status === 'published'),
+      };
+    }
+
+    const response = await apiClient.get<MaybeWrapped<any>>(`/public/events/${slug}/forms`);
+    const payload = unwrapApiData(response);
+    return {
+      event: {
+        id: payload.event?.id || '',
+        name: payload.event?.title || payload.event?.name || '',
+      },
+      forms: Array.isArray(payload.forms) ? payload.forms.map((form: BackendFormResponse) => formFromBackend(form)) : [],
+    };
+  }
+
+  async getPublicFormBySlug(slug: string, formId: string) {
     if (config.features.useMockData) {
       await delay(300);
-      const form = mockForms[0];
+      const form = mockForms.find((item) => item.id === formId);
       if (!form) throw new Error('Form not found');
       return form;
     }
-    const response = await apiClient.get<ApiResponse<BackendFormResponse>>(`/public/forms/${token}`);
-    return formFromBackend(response.data);
+
+    const response = await apiClient.get<MaybeWrapped<any>>(`/public/events/${slug}/forms/${formId}`);
+    const payload = unwrapApiData(response);
+    return formFromBackend(payload.form || payload);
   }
 
-  /** Submit a response via share token */
-  async submitByToken(token: string, data: PublicFormSubmitRequest): Promise<FormResponse> {
+  async submitPublicForm(slug: string, formId: string, data: PublicFormSubmitRequest) {
     if (config.features.useMockData) {
-      await delay(600);
-      const newResponse = {
-        id: generateId('resp'),
-        formId: 'mock-form',
+      return this.submitAuthenticatedForm(formId, data);
+    }
+
+    const payload: SubmitFormRequest = {
+      answersJson: {
+        ...data.answers,
         respondentName: data.respondentName,
         respondentEmail: data.respondentEmail,
-        answers: data.answers,
-        submittedAt: new Date().toISOString(),
-      } as FormResponse;
-      mockFormResponses.push(newResponse);
-      return newResponse;
-    }
-    const response = await apiClient.post<ApiResponse<FormSubmissionResponse>>(`/public/forms/${token}/submit`, {
-      answersJson: data.answers,
-    });
-    return submissionToFormResponse(response.data);
+        metadata: data.metadata,
+      },
+    };
+    const response = await apiClient.post<MaybeWrapped<FormSubmissionResponse>>(`/forms/${formId}/submissions`, payload);
+    return submissionToFormResponse(unwrapApiData(response));
   }
 }
 

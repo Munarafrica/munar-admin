@@ -108,8 +108,7 @@ export function useOrders({ eventId, autoFetch = true }: UseOrdersOptions): UseO
   const markFulfilled = useCallback(async (orderId: string): Promise<boolean> => {
     try {
       const updated = await merchandiseService.updateOrder(eventId, orderId, {
-        status: 'fulfilled',
-        fulfilmentStatus: 'completed',
+        fulfillmentStatus: 'COMPLETED',
       });
       setOrders(prev => prev.map(o => o.id === orderId ? updated : o));
       return true;

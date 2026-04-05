@@ -1,6 +1,7 @@
 import { config } from '../config';
 import { apiClient } from '../lib/api-client';
 import {
+  BackendEventResponse,
   CreateWebsitePageRequest,
   PublishedWebsiteOverviewResponse,
   PublishedWebsitePageResponse,
@@ -24,6 +25,61 @@ function ensureDefaults(config: WebsiteConfig): WebsiteConfig {
   };
 }
 
+function extractSections(sectionsJson?: Record<string, unknown> | null): WebsiteConfig['sections'] {
+  const rawSections = sectionsJson && 'sections' in sectionsJson
+    ? (sectionsJson.sections as unknown)
+    : sectionsJson;
+
+  if (!Array.isArray(rawSections)) {
+    return [...DEFAULT_SECTIONS];
+  }
+
+  const normalized = rawSections
+    .map((section, index) => {
+      if (!section || typeof section !== 'object') return null;
+
+      const raw = section as Record<string, unknown>;
+      const props = (raw.props && typeof raw.props === 'object' ? raw.props : {}) as Record<string, unknown>;
+      const id = typeof raw.id === 'string'
+        ? raw.id
+        : typeof raw.type === 'string'
+          ? raw.type
+          : null;
+
+      if (!id) return null;
+
+      return {
+        id,
+        label: typeof props.label === 'string' ? props.label : id,
+        visible: typeof props.visible === 'boolean' ? props.visible : true,
+        order: typeof props.order === 'number' ? props.order : index,
+        variant: typeof props.variant === 'string' ? props.variant : undefined,
+        overrides: (props.overrides && typeof props.overrides === 'object'
+          ? props.overrides
+          : undefined) as WebsiteConfig['sections'][number]['overrides'],
+      };
+    })
+    .filter((section): section is WebsiteConfig['sections'][number] => !!section);
+
+  return normalized.length ? normalized : [...DEFAULT_SECTIONS];
+}
+
+function toSectionsJson(sections: WebsiteConfig['sections']): Record<string, unknown> {
+  return {
+    sections: sections.map((section) => ({
+      id: section.id,
+      type: section.id,
+      props: {
+        label: section.label,
+        visible: section.visible,
+        order: section.order,
+        variant: section.variant,
+        overrides: section.overrides,
+      },
+    })),
+  };
+}
+
 function localLoad(eventId: string): WebsiteConfig {
   try {
     const raw = localStorage.getItem(getStorageKey(eventId));
@@ -43,6 +99,15 @@ function localSave(eventId: string, config: WebsiteConfig): WebsiteConfig {
   return updated;
 }
 
+function logWebsiteSaveError(step: string, error: unknown) {
+  if (error instanceof Error) {
+    console.error(`[websiteService.saveConfig] ${step} failed:`, error.message, error);
+    return;
+  }
+
+  console.error(`[websiteService.saveConfig] ${step} failed:`, error);
+}
+
 class WebsiteService {
   getConfig(eventId: string): WebsiteConfig {
     return localLoad(eventId);
@@ -54,7 +119,8 @@ class WebsiteService {
     }
 
     try {
-      const [settings, pages] = await Promise.all([
+      const [event, settings, pages] = await Promise.all([
+        apiClient.get<BackendEventResponse>(`/events/${eventId}`),
         apiClient.get<Record<string, unknown> | null>(`/events/${eventId}/website-settings`),
         apiClient.get<WebsitePageResponse[]>(`/events/${eventId}/website-pages`),
       ]);
@@ -63,12 +129,12 @@ class WebsiteService {
       const nextConfig = ensureDefaults({
         ...DEFAULT_WEBSITE_CONFIG,
         ...(settings?.websiteSettingsJson as Partial<WebsiteConfig> | undefined),
-        status: (settings as Record<string, any> | null)?.published ? 'published' : 'draft',
+        status: event.websitePublished ? 'published' : 'draft',
         seo: {
           ...DEFAULT_WEBSITE_CONFIG.seo,
           ...(homePage?.seoJson as Record<string, unknown> | undefined),
         },
-        sections: (homePage?.sectionsJson as WebsiteConfig['sections']) || DEFAULT_SECTIONS,
+        sections: extractSections(homePage?.sectionsJson),
       });
 
       return localSave(eventId, nextConfig);
@@ -91,6 +157,7 @@ class WebsiteService {
         accessControl: nextConfig.accessControl,
         password: nextConfig.password,
         logoUrl: nextConfig.logoUrl,
+        logoAsset: nextConfig.logoAsset,
         navbarEnabled: nextConfig.navbarEnabled,
         socialLinks: nextConfig.socialLinks,
       },
@@ -99,20 +166,42 @@ class WebsiteService {
     const homePagePayload: CreateWebsitePageRequest = {
       pageKey: 'home',
       title: nextConfig.seo.title || 'Home',
-      sectionsJson: nextConfig.sections as unknown as Record<string, unknown>,
+      sectionsJson: toSectionsJson(nextConfig.sections),
       seoJson: nextConfig.seo as unknown as Record<string, unknown>,
       isPublished: nextConfig.status === 'published',
     };
 
-    await apiClient.patch(`/events/${eventId}/website-settings`, settingsPayload);
+    try {
+      await apiClient.patch(`/events/${eventId}/website-settings`, settingsPayload);
+    } catch (error) {
+      logWebsiteSaveError('PATCH /events/:eventId/website-settings', error);
+      throw error;
+    }
 
-    const pages = await apiClient.get<WebsitePageResponse[]>(`/events/${eventId}/website-pages`);
+    let pages: WebsitePageResponse[];
+    try {
+      pages = await apiClient.get<WebsitePageResponse[]>(`/events/${eventId}/website-pages`);
+    } catch (error) {
+      logWebsiteSaveError('GET /events/:eventId/website-pages', error);
+      throw error;
+    }
+
     const homePage = pages.find((page) => page.pageKey === 'home');
 
     if (homePage) {
-      await apiClient.patch(`/website-pages/${homePage.id}`, homePagePayload);
+      try {
+        await apiClient.patch(`/website-pages/${homePage.id}`, homePagePayload);
+      } catch (error) {
+        logWebsiteSaveError('PATCH /website-pages/:pageId', error);
+        throw error;
+      }
     } else {
-      await apiClient.post(`/events/${eventId}/website-pages`, homePagePayload);
+      try {
+        await apiClient.post(`/events/${eventId}/website-pages`, homePagePayload);
+      } catch (error) {
+        logWebsiteSaveError('POST /events/:eventId/website-pages', error);
+        throw error;
+      }
     }
 
     return updated;

@@ -21,7 +21,7 @@ import {
 import { CUSTOM_BLOCK_PRESETS, createDefaultBlock } from '../../../modules/website/templates/helpers';
 import { SECTION_METADATA, getSectionMeta, canHideSection } from '../../../modules/website/templates/registry';
 import { cn } from '../../ui/utils';
-import { SingleImageField, MultiImageField } from '../SingleImageField';
+import { AssetLibraryRequestDetail, SingleImageField, MultiImageField } from '../SingleImageField';
 
 // ── Types ───────────────────────────────────────────────────────────────────
 
@@ -37,6 +37,7 @@ interface SectionsPanelProps {
   config: WebsiteConfig;
   selectedSection: SectionId | null;
   eventId?: string;
+  onOpenAssetLibrary?: (request: AssetLibraryRequestDetail) => void;
   onSelectSection: (id: SectionId) => void;
   onToggleSection: (id: SectionId) => void;
   onSwapSections: (fromId: SectionId, toId: SectionId) => void;
@@ -161,7 +162,8 @@ function BlockEditorModal({ block, eventId, onSave, onClose, isNew }: BlockEdito
                 eventId={eventId}
                 aspectRatio="landscape"
                 placeholder="Upload block image"
-                category="block"
+                category="custom-block"
+                onOpenAssetLibrary={onOpenAssetLibrary}
               />
             </div>
           )}
@@ -175,6 +177,7 @@ function BlockEditorModal({ block, eventId, onSave, onClose, isNew }: BlockEdito
                 onChange={(urls) => setDraft({ ...draft, images: urls })}
                 eventId={eventId}
                 maxImages={6}
+                category="custom-block"
               />
             </div>
           )}
@@ -254,11 +257,12 @@ function BlockEditorModal({ block, eventId, onSave, onClose, isNew }: BlockEdito
 
 interface SectionOverrideEditorProps {
   section: SectionConfig;
+  eventId?: string;
   onSave: (overrides: SectionOverrides) => void;
   onClose: () => void;
 }
 
-function SectionOverrideEditor({ section, onSave, onClose }: SectionOverrideEditorProps) {
+function SectionOverrideEditor({ section, eventId, onSave, onClose }: SectionOverrideEditorProps) {
   const meta = SECTION_METADATA[section.id];
   const [draft, setDraft] = useState<SectionOverrides>(section.overrides || {});
 
@@ -358,6 +362,226 @@ function SectionOverrideEditor({ section, onSave, onClose }: SectionOverrideEdit
               This section does not support content overrides.
             </p>
           )}
+
+          {(section.id === 'hero' || section.id === 'about' || section.id === 'tickets' || section.id === 'speakers' || section.id === 'sponsors') && (
+            <div>
+              <label className="block text-xs font-semibold text-slate-600 dark:text-slate-300 mb-1.5">
+                {section.id === 'hero' ? 'Hero Image' : 'Background Image'}
+              </label>
+              <SingleImageField
+                value={section.id === 'hero' ? draft.heroImage?.url : draft.backgroundImage?.url}
+                asset={section.id === 'hero' ? draft.heroImage : draft.backgroundImage}
+                onChange={() => setDraft((prev) => ({
+                  ...prev,
+                  ...(section.id === 'hero'
+                    ? { heroImage: undefined }
+                    : { backgroundImage: undefined }),
+                }))}
+                onAssetChange={(asset) => setDraft((prev) => ({
+                  ...prev,
+                  ...(section.id === 'hero'
+                    ? { heroImage: asset }
+                    : { backgroundImage: asset }),
+                }))}
+                eventId={eventId}
+                category={section.id === 'hero' ? 'hero' : 'section'}
+                aspectRatio="landscape"
+                placeholder={section.id === 'hero' ? 'Upload hero image' : 'Upload section background'}
+                onOpenAssetLibrary={onOpenAssetLibrary}
+              />
+            </div>
+          )}
+
+          {section.id === 'hero' && (
+            <div className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.16em] text-slate-500 dark:text-slate-400">
+                    Hero Overlay
+                  </p>
+                  <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                    Add a professional overlay above the hero image with solid or gradient styling.
+                  </p>
+                </div>
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
+                  <input
+                    type="checkbox"
+                    checked={draft.heroOverlay?.enabled !== false}
+                    onChange={(event) => setDraft((prev) => ({
+                      ...prev,
+                      heroOverlay: {
+                        style: prev.heroOverlay?.style || 'gradient',
+                        color: prev.heroOverlay?.color || '#020617',
+                        secondaryColor: prev.heroOverlay?.secondaryColor || '#0f172a',
+                        opacity: prev.heroOverlay?.opacity ?? 0.72,
+                        secondaryOpacity: prev.heroOverlay?.secondaryOpacity ?? 0.28,
+                        direction: prev.heroOverlay?.direction || 'to top',
+                        blendMode: prev.heroOverlay?.blendMode || 'normal',
+                        ...prev.heroOverlay,
+                        enabled: event.target.checked,
+                      },
+                    }))}
+                    className="rounded accent-indigo-600"
+                  />
+                  Enabled
+                </label>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Overlay Style</label>
+                  <select
+                    value={draft.heroOverlay?.style || 'gradient'}
+                    onChange={(event) => setDraft((prev) => ({
+                      ...prev,
+                      heroOverlay: {
+                        ...prev.heroOverlay,
+                        enabled: prev.heroOverlay?.enabled ?? true,
+                        style: event.target.value as 'solid' | 'gradient',
+                      },
+                    }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    <option value="gradient">Gradient</option>
+                    <option value="solid">Solid</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Blend Mode</label>
+                  <select
+                    value={draft.heroOverlay?.blendMode || 'normal'}
+                    onChange={(event) => setDraft((prev) => ({
+                      ...prev,
+                      heroOverlay: {
+                        ...prev.heroOverlay,
+                        enabled: prev.heroOverlay?.enabled ?? true,
+                        blendMode: event.target.value as NonNullable<SectionOverrides['heroOverlay']>['blendMode'],
+                      },
+                    }))}
+                    className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                  >
+                    <option value="normal">Normal</option>
+                    <option value="multiply">Multiply</option>
+                    <option value="overlay">Overlay</option>
+                    <option value="screen">Screen</option>
+                    <option value="soft-light">Soft Light</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Primary Color</label>
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-950">
+                    <input
+                      type="color"
+                      value={draft.heroOverlay?.color || '#020617'}
+                      onChange={(event) => setDraft((prev) => ({
+                        ...prev,
+                        heroOverlay: {
+                          ...prev.heroOverlay,
+                          enabled: prev.heroOverlay?.enabled ?? true,
+                          color: event.target.value,
+                        },
+                      }))}
+                      className="h-8 w-10 rounded border border-slate-200 bg-transparent p-0 dark:border-slate-700"
+                    />
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                      {(draft.heroOverlay?.color || '#020617').toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Secondary Color</label>
+                  <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-2 py-2 dark:border-slate-700 dark:bg-slate-950">
+                    <input
+                      type="color"
+                      value={draft.heroOverlay?.secondaryColor || '#0f172a'}
+                      onChange={(event) => setDraft((prev) => ({
+                        ...prev,
+                        heroOverlay: {
+                          ...prev.heroOverlay,
+                          enabled: prev.heroOverlay?.enabled ?? true,
+                          secondaryColor: event.target.value,
+                        },
+                      }))}
+                      className="h-8 w-10 rounded border border-slate-200 bg-transparent p-0 dark:border-slate-700"
+                    />
+                    <span className="text-xs font-medium text-slate-600 dark:text-slate-300">
+                      {(draft.heroOverlay?.secondaryColor || '#0F172A').toUpperCase()}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Primary Opacity</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={draft.heroOverlay?.opacity ?? 0.72}
+                    onChange={(event) => setDraft((prev) => ({
+                      ...prev,
+                      heroOverlay: {
+                        ...prev.heroOverlay,
+                        enabled: prev.heroOverlay?.enabled ?? true,
+                        opacity: Number(event.target.value),
+                      },
+                    }))}
+                    className="w-full"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{Math.round((draft.heroOverlay?.opacity ?? 0.72) * 100)}%</p>
+                </div>
+                <div>
+                  <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Secondary Opacity</label>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={draft.heroOverlay?.secondaryOpacity ?? 0.28}
+                    onChange={(event) => setDraft((prev) => ({
+                      ...prev,
+                      heroOverlay: {
+                        ...prev.heroOverlay,
+                        enabled: prev.heroOverlay?.enabled ?? true,
+                        secondaryOpacity: Number(event.target.value),
+                      },
+                    }))}
+                    className="w-full"
+                  />
+                  <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">{Math.round((draft.heroOverlay?.secondaryOpacity ?? 0.28) * 100)}%</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="mb-1.5 block text-xs font-semibold text-slate-600 dark:text-slate-300">Gradient Direction</label>
+                <select
+                  value={draft.heroOverlay?.direction || 'to top'}
+                  onChange={(event) => setDraft((prev) => ({
+                    ...prev,
+                    heroOverlay: {
+                      ...prev.heroOverlay,
+                      enabled: prev.heroOverlay?.enabled ?? true,
+                      direction: event.target.value,
+                    },
+                  }))}
+                  className="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-900 outline-none focus:ring-2 focus:ring-indigo-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
+                >
+                  <option value="to top">Bottom to Top</option>
+                  <option value="to bottom">Top to Bottom</option>
+                  <option value="to right">Left to Right</option>
+                  <option value="to left">Right to Left</option>
+                  <option value="135deg">Diagonal</option>
+                  <option value="45deg">Diagonal Reverse</option>
+                </select>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Footer */}
@@ -437,6 +661,7 @@ export function SectionsPanel({
   config,
   selectedSection,
   eventId,
+  onOpenAssetLibrary,
   onSelectSection,
   onToggleSection,
   onSwapSections,
@@ -646,10 +871,11 @@ export function SectionsPanel({
           {hasOverrides && (
             <button
               onClick={(e) => { e.stopPropagation(); setEditingSection(section); }}
-              className="flex-shrink-0 w-7 h-7 rounded-lg flex items-center justify-center text-slate-400 opacity-0 group-hover:opacity-100 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-all"
-              title="Section settings"
+              className="flex-shrink-0 h-7 px-2 rounded-lg flex items-center justify-center gap-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-all border border-slate-200 dark:border-slate-700"
+              title="Edit section text"
             >
               <Settings2 className="w-3.5 h-3.5" />
+              <span className="text-[10px] font-semibold">Edit</span>
             </button>
           )}
 
@@ -762,6 +988,14 @@ export function SectionsPanel({
                 <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">Hero</p>
                 <p className="text-xs text-slate-400 dark:text-slate-500">Event name, date & main CTA</p>
               </div>
+              <button
+                onClick={(e) => { e.stopPropagation(); setEditingSection(heroSection); }}
+                className="flex-shrink-0 h-7 px-2 rounded-lg flex items-center justify-center gap-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/30 transition-all border border-slate-200 dark:border-slate-700"
+                title="Edit hero text"
+              >
+                <Settings2 className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-semibold">Edit</span>
+              </button>
             </div>
           </div>
         )}
@@ -833,6 +1067,7 @@ export function SectionsPanel({
       {editingSection && (
         <SectionOverrideEditor
           section={editingSection}
+          eventId={eventId}
           onSave={(overrides) => handleSaveSectionOverrides(editingSection.id, overrides)}
           onClose={() => setEditingSection(null)}
         />

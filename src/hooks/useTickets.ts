@@ -2,7 +2,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ticketsService } from '../services';
 import { TicketType, Attendee } from '../components/event-dashboard/types';
-import { PaginatedResponse, SearchParams } from '../types/api';
+import { ApiException, PaginatedResponse, SearchParams } from '../types/api';
 
 interface UseTicketsOptions {
   eventId: string;
@@ -24,7 +24,7 @@ interface UseTicketsReturn {
   fetchTickets: () => Promise<void>;
   createTicket: (data: Partial<TicketType>) => Promise<TicketType | null>;
   updateTicket: (ticketId: string, data: Partial<TicketType>) => Promise<TicketType | null>;
-  deleteTicket: (ticketId: string) => Promise<boolean>;
+  deleteTicket: (ticketId: string) => Promise<{ success: boolean; error?: string }>;
   duplicateTicket: (ticketId: string) => Promise<TicketType | null>;
   
   // Attendee Actions
@@ -100,14 +100,26 @@ export function useTickets({ eventId, autoFetch = true }: UseTicketsOptions): Us
   }, [eventId]);
 
   // Delete ticket
-  const deleteTicket = useCallback(async (ticketId: string): Promise<boolean> => {
+  const deleteTicket = useCallback(async (ticketId: string): Promise<{ success: boolean; error?: string }> => {
     try {
       await ticketsService.deleteTicket(eventId, ticketId);
       setTickets(prev => prev.filter(t => t.id !== ticketId));
-      return true;
+      return { success: true };
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to delete ticket');
-      return false;
+      let message = 'Failed to delete ticket';
+      if (err instanceof ApiException) {
+        if (err.statusCode === 404) {
+          message = 'Ticket not found or already deleted';
+        } else if (err.statusCode === 403) {
+          message = "You don't have permission to delete this ticket";
+        } else {
+          message = err.message;
+        }
+      } else if (err instanceof Error) {
+        message = err.message;
+      }
+      setError(message);
+      return { success: false, error: message };
     }
   }, [eventId]);
 

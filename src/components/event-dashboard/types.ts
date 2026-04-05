@@ -60,6 +60,7 @@ export interface EventData {
   endTime?: string;
   type: 'Physical' | 'Virtual' | 'Hybrid';
   websiteUrl: string;
+  websitePublished?: boolean;
   coverImageUrl?: string;
   country?: string;
   venueLocation?: string;
@@ -83,7 +84,7 @@ export interface EventData {
 
 // --- Ticket Management Types ---
 
-export type TicketStatus = 'Draft' | 'On Sale' | 'Sold Out' | 'Hidden';
+export type TicketStatus = 'Draft' | 'On Sale' | 'Sold Out' | 'Pause';
 export type TicketTypeType = 'Single' | 'Group';
 export type TicketVisibility = 'Public' | 'Hidden' | 'Invite Only';
 
@@ -97,7 +98,9 @@ export interface TicketType {
   id: string;
   name: string;
   type: TicketTypeType;
+  ticketKind?: 'SINGLE' | 'GROUP';
   groupSize?: number; // Only for Group tickets
+  attendeesPerUnit?: number;
   isFree: boolean;
   price?: number;
   quantitySold: number;
@@ -170,7 +173,7 @@ export interface Session {
 // --- Forms & Surveys Types ---
 
 export type FormType = 'registration' | 'survey' | 'feedback' | 'custom';
-export type FormStatus = 'draft' | 'published' | 'closed' | 'scheduled';
+export type FormStatus = 'draft' | 'published' | 'closed' | 'archived';
 export type FormFieldType = 'text' | 'textarea' | 'email' | 'phone' | 'number' | 'date' | 'select' | 'multiselect' | 'checkbox' | 'radio' | 'rating' | 'file';
 
 export interface FormField {

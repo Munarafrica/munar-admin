@@ -4,7 +4,12 @@ export { tenantService } from './tenant.service';
 export { eventsService, type EventListItem } from './events.service';
 export { ticketsService } from './tickets.service';
 export { programService } from './program.service';
-export { formsService, type CreateFormRequest, type UpdateFormRequest } from './forms.service';
+export {
+  formsService,
+  type CreateFormRequest,
+  type UpdateFormRequest,
+  type PublicFormSubmitRequest,
+} from './forms.service';
 export * as merchandiseService from './merchandise.service';
 export * as votingService from './voting.service';
 export * as sponsorsService from './sponsors.service';

@@ -28,9 +28,10 @@ const EventContext = createContext<EventContextValue | undefined>(undefined);
 interface EventProviderProps {
   children: React.ReactNode;
   eventId?: string; // Optional initial event ID
+  resolveMode?: 'admin' | 'public-slug';
 }
 
-export function EventProvider({ children, eventId }: EventProviderProps) {
+export function EventProvider({ children, eventId, resolveMode = 'admin' }: EventProviderProps) {
   const [state, setState] = useState<EventContextState>({
     currentEvent: null,
     metrics: [],
@@ -45,6 +46,20 @@ export function EventProvider({ children, eventId }: EventProviderProps) {
     setState(prev => ({ ...prev, isLoading: true, error: null }));
     
     try {
+      if (resolveMode === 'public-slug') {
+        const event = await eventsService.getPublicEventBySlug(id);
+        setState({
+          currentEvent: event,
+          metrics: [],
+          checklist: [],
+          modules: [],
+          activities: [],
+          isLoading: false,
+          error: null,
+        });
+        return;
+      }
+
       // Load all event data with fallbacks for non-critical failures
       const results = await Promise.allSettled([
         eventsService.getEvent(id),
@@ -85,7 +100,7 @@ export function EventProvider({ children, eventId }: EventProviderProps) {
         error: err instanceof Error ? err.message : 'Failed to load event',
       }));
     }
-  }, []);
+  }, [resolveMode]);
 
   const updateEvent = useCallback(async (data: Partial<EventData>) => {
     if (!state.currentEvent) return;
