@@ -6,6 +6,7 @@ It covers:
 
 - event-level merch enablement
 - product management for organizers
+- merch image upload for product images
 - merch order creation and order management
 - backend rules the frontend must respect
 - important backend gaps the frontend should know before building
@@ -41,68 +42,219 @@ That means:
 
 These are important because they affect what the frontend can realistically ship today.
 
-### 1. No public merch storefront endpoints yet
+### 1. Public merch now exists, but shipping quotes are still missing
 
-There is currently no public route like:
+The backend now supports public merch browsing and checkout:
 
 - `GET /api/public/events/:eventSlug/products`
+- `GET /api/public/products/:productId`
+- `POST /api/public/events/:eventId/merch-orders`
+- `GET /api/public/merch-orders/:orderId?email=...`
+- `POST /api/payments/merch-orders/:merchOrderId/initialize-payment`
 
-All product endpoints are authenticated organizer endpoints.
+What is still missing:
 
-This means a public event website or guest storefront cannot fetch merch products from a public backend endpoint yet.
+- shipping quote calculation
+- reservation timers
+- full guest order history dashboard
+- payment expiry/retry UX beyond the basic order/payment states
 
-### 2. No merch checkout/payment initialization endpoint yet
+### 2. Inventory is deducted on payment confirmation, not at order creation
 
-There is payment initialization for ticket orders, but not for merch orders.
+Current behavior:
 
-Current merch order behavior:
-
-- if `totalMinor > 0`, the order is created with `status = PENDING`
-- if `totalMinor === 0`, the order is auto-confirmed and becomes `PAID`
-
-There is currently no backend endpoint to initialize payment for a merch order.
-
-So for paid merch:
-
-- the frontend can create the order
-- the frontend can fetch the order
-- but the backend does not yet expose the next payment step
-
-### 3. Merch order creation currently requires auth in practice
-
-The order creation service accepts `userId` as nullable, but the route is not marked public and the app uses a global JWT guard.
-
-So in practice:
-
-- `POST /api/events/:eventId/merch-orders` requires `Authorization: Bearer <access_token>`
-
-This means guest checkout is not available right now.
-
-### 4. Order email is required in the request but is not stored on the merch order
-
-`CreateMerchOrderDto` requires:
-
-- `email`
-
-But the `MerchOrder` model does not contain an `email` field, and the service does not persist it.
-
-So the frontend should know:
-
-- the request must include `email`
-- the response will not include `email`
-- there is currently no reliable way to re-read the buyer email from the merch order response
-
-### 5. `metadataJson` is accepted on merch order create but currently ignored
-
-The create order DTO accepts:
-
-- `metadataJson`
-
-But the order creation service does not save it to the order or items.
+- stock is checked when the order is created
+- stock is checked again when payment succeeds
+- stock is deducted only when the order is confirmed as paid
+- there is no reservation hold in the current MVP flow
 
 Frontend implication:
 
-- do not rely on `metadataJson` being persisted for merch orders yet
+- do not show reservation countdown timers
+- a pending checkout is not guaranteed stock until payment succeeds
+
+### 3. Public buyer lookup is email-based for guest orders
+
+Guest buyers can re-open an order with:
+
+- `GET /api/public/merch-orders/:orderId?email=buyer@example.com`
+
+Frontend implication:
+
+- the storefront should keep both `orderId` and `email` after checkout
+
+## Merch Product Image Upload
+
+Merchandise product create and update still use:
+
+- `imageUrl: string`
+
+The intended frontend flow is now:
+
+1. user selects an image file
+2. frontend requests a signed merch-image upload
+3. frontend uploads the binary file directly to storage using the signed URL
+4. frontend finalizes the upload with the backend
+5. backend returns a stable public `url`
+6. frontend sends that `url` as `imageUrl` when creating or updating the product
+
+### Supported File Types
+
+- `image/png`
+- `image/jpeg`
+- `image/webp`
+
+### Enforced Max File Size
+
+- `10MB`
+- exact backend limit: `10 * 1024 * 1024` bytes
+
+### Upload Endpoints
+
+#### 1. Presign Merch Image Upload
+
+- Method: `POST`
+- URL: `/api/uploads/merch-images/presign`
+- Auth: required
+
+Request:
+
+```json
+{
+  "eventId": "2a79d4d3-3c69-453a-94bf-81b5cb1ab4a0",
+  "fileName": "shirt.webp",
+  "contentType": "image/webp",
+  "size": 245123
+}
+```
+
+Success response:
+
+```json
+{
+  "assetId": "0f6fc0b3-2d7f-4d6c-8e46-6c4fba7b6c14",
+  "uploadUrl": "https://s3.example.com/...",
+  "fileUrl": "http://localhost:8000/api/public/merch-images/0f6fc0b3-2d7f-4d6c-8e46-6c4fba7b6c14",
+  "headers": {
+    "Content-Type": "image/webp"
+  },
+  "mimeType": "image/webp",
+  "size": 245123,
+  "maxFileSizeBytes": 10485760
+}
+```
+
+Permission rules:
+
+- `OWNER`
+- `ADMIN`
+- `EDITOR`
+
+Failure cases:
+
+- `404 NOT_FOUND` if the event does not exist
+- `403 FORBIDDEN` if the user cannot manage merch for the event
+- `400 VALIDATION_ERROR` for unsupported file type
+- `400 VALIDATION_ERROR` for file too large
+
+#### 2. Upload Binary To Storage
+
+Use the returned `uploadUrl` and send the file directly to storage.
+
+Example:
+
+```http
+PUT <uploadUrl>
+Content-Type: image/webp
+```
+
+Important:
+
+- use the exact `Content-Type` from `headers`
+- do not send the file to the backend app server in this flow
+
+#### 3. Finalize Merch Image Upload
+
+- Method: `POST`
+- URL: `/api/uploads/merch-images/:assetId/complete`
+- Auth: required
+
+Request:
+
+```json
+{
+  "contentType": "image/webp",
+  "size": 245123
+}
+```
+
+Success response:
+
+```json
+{
+  "url": "http://localhost:8000/api/public/merch-images/0f6fc0b3-2d7f-4d6c-8e46-6c4fba7b6c14",
+  "mimeType": "image/webp",
+  "size": 245123
+}
+```
+
+Failure cases:
+
+- `404 NOT_FOUND` if the signed upload asset does not exist
+- `403 FORBIDDEN` if the user cannot manage merch for the event
+- `400 VALIDATION_ERROR` if the uploaded file cannot be found in storage
+- `400 VALIDATION_ERROR` if the uploaded file type does not match the signed upload
+- `400 VALIDATION_ERROR` if the uploaded file size does not match the signed upload
+- `400 VALIDATION_ERROR` if the uploaded file exceeds 10MB
+
+#### 4. Public Image URL
+
+- Method: `GET`
+- URL: `/api/public/merch-images/:assetId`
+- Auth: none
+
+Frontend note:
+
+- this route is the stable `imageUrl` that should be saved on the product
+- the backend redirects to a signed storage access URL behind the scenes
+
+### Recommended Frontend Upload Flow
+
+```ts
+const presign = await api.post("/api/uploads/merch-images/presign", {
+  eventId,
+  fileName: file.name,
+  contentType: file.type,
+  size: file.size,
+});
+
+await fetch(presign.uploadUrl, {
+  method: "PUT",
+  headers: presign.headers,
+  body: file,
+});
+
+const finalized = await api.post(
+  `/api/uploads/merch-images/${presign.assetId}/complete`,
+  {
+    contentType: file.type,
+    size: file.size,
+  },
+);
+
+const imageUrl = finalized.url;
+```
+
+Then create or update the product with:
+
+```json
+{
+  "name": "Munar T-Shirt",
+  "productType": "PHYSICAL",
+  "basePriceMinor": 150000,
+  "imageUrl": "http://localhost:8000/api/public/merch-images/0f6fc0b3-2d7f-4d6c-8e46-6c4fba7b6c14"
+}
+```
 
 ## Event Settings Dependency
 
@@ -239,8 +391,11 @@ These are the important model shapes the frontend should expect from the current
   "tenantId": "7a4d0d65-0f63-4fa5-a0f6-3bdf1c01d917",
   "eventId": "2a79d4d3-3c69-453a-94bf-81b5cb1ab4a0",
   "buyerUserId": "f5d694e6-9dca-4881-a0f6-f0c648676fca",
+  "buyerEmail": "buyer@example.com",
   "status": "PENDING",
   "fulfillmentStatus": "UNFULFILLED",
+  "paymentStatus": "PENDING",
+  "paymentReference": "mnr_mch_52a92907f599_1774145632965",
   "currency": "NGN",
   "subtotalMinor": 300000,
   "feeMinor": 0,
@@ -252,6 +407,9 @@ These are the important model shapes the frontend should expect from the current
     "line1": "10 Example Street",
     "city": "Lagos",
     "country": "NG"
+  },
+  "metadataJson": {
+    "note": "Please hold for pickup"
   },
   "createdAt": "2026-04-03T10:30:00.000Z",
   "updatedAt": "2026-04-03T10:30:00.000Z",
@@ -504,25 +662,56 @@ All fields are optional.
 }
 ```
 
-## Merch Order Endpoints
+## Merch Order And Storefront Handoff
 
-These endpoints are for creating and managing merch orders.
+This section is the clean frontend handoff for the current backend.
 
-## 7. Create Merch Order
+Use it as the launch checklist for:
+
+- organizer dashboard merch management
+- public storefront browsing
+- guest or authenticated buyer checkout
+- payment redirect and order re-open
+- organizer-side fulfillment management
+
+## Endpoint Checklist
+
+### Organizer dashboard
+
+- `POST /api/events/:eventId/products`
+- `GET /api/events/:eventId/products`
+- `GET /api/products/:productId`
+- `PATCH /api/products/:productId`
+- `POST /api/products/:productId/variants`
+- `PATCH /api/product-variants/:variantId`
+- `POST /api/events/:eventId/merch-orders`
+- `GET /api/merch-orders/:merchOrderId`
+- `GET /api/events/:eventId/merch-orders`
+- `PATCH /api/merch-orders/:merchOrderId/fulfillment`
+
+### Public storefront
+
+- `GET /api/public/events/:eventSlug/products`
+- `GET /api/public/products/:productId`
+- `POST /api/public/events/:eventId/merch-orders`
+- `GET /api/public/merch-orders/:orderId?email=buyer@example.com`
+- `POST /api/payments/merch-orders/:merchOrderId/initialize-payment`
+
+### Authenticated buyer
+
+- `GET /api/me/merch-orders`
+
+## Organizer Order Endpoints
+
+### 7. Create Merch Order
 
 - Method: `POST`
 - URL: `/api/events/:eventId/merch-orders`
-- Auth: required in practice
+- Auth: required
 
-Example:
+Use this for authenticated dashboard or internal staff order creation.
 
-```http
-POST /api/events/2a79d4d3-3c69-453a-94bf-81b5cb1ab4a0/merch-orders
-Authorization: Bearer <access_token>
-Content-Type: application/json
-```
-
-### Request Payload
+Request example:
 
 ```json
 {
@@ -547,144 +736,74 @@ Content-Type: application/json
 }
 ```
 
-### Validation Rules
+Important backend rules:
 
-- `email` is required and must be a valid email
-- `items` is required and must be an array
-- `items` must contain at least one item logically, or the service returns `400`
-- each item must include:
-  - `productId` as UUID
-  - optional `productVariantId` as UUID
-  - `quantity` as integer `>= 1`
-- `shippingAddressJson` is optional object
-- `metadataJson` is optional object
-- unknown extra fields are rejected
+- `email` is required
+- `items` must contain at least one item
+- each item must belong to the same event
+- selected products must be `ACTIVE`
+- if a product has variants, `productVariantId` is required
+- if tracked inventory is insufficient, the API returns `400`
 
-### Important Backend Rules
+Pricing and status rules:
 
-- event must exist
-- event status cannot be `CANCELLED` or `ARCHIVED`
-- every `productId` must belong to the same event
-- every selected product must have `status = ACTIVE`
-- if a product has variants, the frontend must send `productVariantId`
-- if a product has no variants, the frontend must not rely on variant selection
-- if inventory is tracked and stock is insufficient, the API returns `400`
-
-### Pricing Rules
-
-- if `productVariantId` is provided, price comes from `variant.priceMinor`
-- otherwise, price comes from `product.basePriceMinor`
-- `subtotalMinor = sum(unit price * quantity)`
+- variant price overrides base product price
 - `shippingMinor = 0`
 - `feeMinor = 0`
-- `totalMinor = subtotalMinor + shippingMinor + feeMinor`
+- if `totalMinor > 0`, order starts as `PENDING`
+- if `totalMinor === 0`, order is auto-confirmed as paid
 
-### Status Rules
-
-- if `totalMinor > 0`, order is created as `PENDING`
-- if `totalMinor === 0`, order is created as `PAID` and auto-confirmed
-
-### Stock Deduction Rules
-
-Inventory is not deducted during order creation itself.
-
-Inventory is deducted only when the order is confirmed.
-
-Today, confirmation happens automatically only for zero-total orders.
-
-Because paid merch checkout is not implemented yet:
-
-- paid merch orders can remain `PENDING`
-- inventory for those pending paid orders is not reserved or deducted by this merch module
-
-This is important for frontend expectations around "items held in cart" or "reserved stock":
-
-- there is currently no cart reservation behavior
-- there is currently no timed reservation behavior
-
-### Success Response
-
-Returns the full merch order from `getMerchOrderById`, including:
-
-- `event`
-- `items`
-- each item's `product`
-- each item's `productVariant`
-
-## 8. Get Merch Order By ID
+### 8. Get Merch Order By ID
 
 - Method: `GET`
 - URL: `/api/merch-orders/:merchOrderId`
-- Auth: required in practice
+- Auth: required
 
-### Access Rules
+Access rules:
 
-The user can access the order if either:
+- allowed for the buyer attached to the order
+- allowed for tenant members managing the event
 
-- they are the buyer
-- or they belong to the tenant that owns the event
+Success response includes:
 
-If neither is true, the API returns `403 FORBIDDEN`.
-
-### Success Response
-
-Returns one merch order including:
-
+- order fields
 - `event`
+- `items`
 - `items.product`
 - `items.productVariant`
 
-### Frontend Notes
-
-- there is no dedicated buyer-friendly public lookup endpoint
-- do not assume a guest can reopen an order later without auth
-
-## 9. List Merch Orders For Event
+### 9. List Merch Orders For Event
 
 - Method: `GET`
 - URL: `/api/events/:eventId/merch-orders`
 - Auth: required
 
-### Permission Rules
-
-Allowed tenant roles:
+Permission rules:
 
 - `OWNER`
 - `ADMIN`
 - `EDITOR`
 - `STAFF`
 
-### Success Response
+Frontend note:
 
-Returns an array of merch orders with:
-
-- `items`
-- `items.product`
-- `items.productVariant`
-
-### Frontend Notes
-
+- results are not paginated
 - results are ordered by `createdAt desc`
-- there are currently no filter query params
-- if the dashboard needs filtering, sorting, or pagination, it must do that client-side for now
+- no server-side filters exist yet
 
-## 10. Update Fulfillment Status
+### 10. Update Fulfillment Status
 
 - Method: `PATCH`
 - URL: `/api/merch-orders/:merchOrderId/fulfillment`
 - Auth: required
 
-### Permission Rules
-
-Allowed tenant roles:
+Allowed roles:
 
 - `OWNER`
 - `ADMIN`
 - `STAFF`
 
-Editors can view orders but cannot update fulfillment.
-
-### Request Payload
+Request example:
 
 ```json
 {
@@ -692,7 +811,7 @@ Editors can view orders but cannot update fulfillment.
 }
 ```
 
-### Allowed Values
+Allowed values:
 
 - `UNFULFILLED`
 - `PROCESSING`
@@ -702,94 +821,299 @@ Editors can view orders but cannot update fulfillment.
 - `COMPLETED`
 - `CANCELLED`
 
-### Important Backend Behavior
+Important backend note:
 
-- the backend only validates enum membership
-- it does not enforce a state machine
+- the backend validates enum membership only
+- it does not enforce a strict fulfillment transition graph
 
-So the frontend could technically send:
+## Public Storefront Endpoints
 
-- `UNFULFILLED -> DELIVERED`
-- `COMPLETED -> PROCESSING`
+### 11. List Public Products
 
-If you want a stricter UX, enforce fulfillment transitions on the frontend.
+- Method: `GET`
+- URL: `/api/public/events/:eventSlug/products`
+- Auth: none
 
-## Recommended Frontend State Model
+Optional query params:
 
-To keep the UI aligned with the current backend, this is the safest mental model.
+- `search=<text>`
+- `productType=PHYSICAL|DIGITAL`
+- `category=<text>`
+- `inStock=true|false`
 
-### Organizer Dashboard
+Backend rules:
 
-Use the dashboard for:
+- only returns products with `status = ACTIVE`
+- includes variants
+- event must be publicly visible
+- results are ordered by `createdAt desc`
 
-- enabling merch in event settings
-- creating and editing products
-- creating and editing variants
-- activating or pausing products
-- viewing event merch orders
-- updating fulfillment status
+Response example:
 
-### Buyer Experience
+```json
+{
+  "event": {
+    "id": "2a79d4d3-3c69-453a-94bf-81b5cb1ab4a0",
+    "slug": "munar-launch-event",
+    "title": "Munar Launch Event",
+    "summary": "A short event summary",
+    "currency": "NGN"
+  },
+  "products": []
+}
+```
 
-The current backend only partially supports buyer-side merch.
+### 12. Public Product Detail
 
-What works:
+- Method: `GET`
+- URL: `/api/public/products/:productId`
+- Auth: none
 
-- authenticated user can create a merch order
-- authenticated user can fetch their merch order by id
+Returns:
 
-What does not exist yet:
+- product fields
+- `variants`
+- event summary
 
-- public product discovery endpoint
-- guest checkout
-- merch payment initialization
-- buyer order history endpoint
-- cart reservation logic
+Visibility rules:
 
-So if the frontend still wants to build a buyer-side merch experience now, it must do so with these constraints clearly understood.
+- product must be `ACTIVE`
+- owning event must be publicly visible
+
+### 13. Create Public Merch Order
+
+- Method: `POST`
+- URL: `/api/public/events/:eventId/merch-orders`
+- Auth: optional
+
+This is the main buyer checkout creation endpoint.
+
+Request example:
+
+```json
+{
+  "email": "buyer@example.com",
+  "items": [
+    {
+      "productId": "8ebceca7-b6d9-4ea4-a427-01990de9f04f",
+      "productVariantId": "985c4fc3-7824-4e1f-b56b-e7d7988bf75e",
+      "quantity": 2
+    }
+  ],
+  "shippingAddressJson": {
+    "fullName": "Jane Doe",
+    "phone": "+2348000000000",
+    "line1": "10 Example Street",
+    "city": "Lagos",
+    "country": "NG"
+  },
+  "metadataJson": {
+    "note": "Please hold for pickup"
+  }
+}
+```
+
+Frontend notes:
+
+- guest checkout is supported
+- authenticated buyers can also use this endpoint
+- persist both `order.id` and `email` after success
+- use the returned order object as the source of truth for totals
+
+### 14. Public Buyer Order Lookup
+
+- Method: `GET`
+- URL: `/api/public/merch-orders/:orderId?email=buyer@example.com`
+- Auth: none
+
+Use this after payment redirect for guest buyers.
+
+Rules:
+
+- the email query must match stored `buyerEmail`
+- authenticated buyers can also be resolved through their attached buyer identity
+
+### 15. Buyer Order History
+
+- Method: `GET`
+- URL: `/api/me/merch-orders`
+- Auth: required
+
+Use this for signed-in buyer account pages.
+
+Frontend note:
+
+- results are not paginated
+- results are ordered by `createdAt desc`
+
+### 16. Initialize Merch Payment
+
+- Method: `POST`
+- URL: `/api/payments/merch-orders/:merchOrderId/initialize-payment`
+- Auth: optional
+
+Request example:
+
+```json
+{
+  "email": "buyer@example.com",
+  "callbackUrl": "https://store.example.com/checkout/complete"
+}
+```
+
+Success response example:
+
+```json
+{
+  "checkoutUrl": "https://checkout.paystack.com/u85t7odin9bv816",
+  "reference": "mnr_mch_52a92907f599_1774145632965",
+  "status": "PENDING",
+  "provider": "paystack",
+  "merchOrderId": "52a92907-f599-4764-ab01-21694a76d631",
+  "transactionId": "cfeee453-225f-4a8a-a4c8-69729db7f7d8",
+  "accessCode": "u85t7odin9bv816"
+}
+```
+
+Frontend rules:
+
+- for guest orders, send the same buyer `email` used at order creation
+- redirect the buyer to `checkoutUrl`
+- after return, reopen the order using public lookup or buyer history
+- do not assume payment success until the order is re-fetched and shows paid state
+
+## Exact Checkout Flow
+
+Use this exact storefront flow:
+
+1. Fetch the catalog with `GET /api/public/events/:eventSlug/products`.
+2. Open a product detail with `GET /api/public/products/:productId` if needed.
+3. Force variant selection when `variants.length > 0`.
+4. Create the order with `POST /api/public/events/:eventId/merch-orders`.
+5. If `order.totalMinor === 0`, treat the order as immediately confirmed.
+6. If `order.totalMinor > 0`, call `POST /api/payments/merch-orders/:merchOrderId/initialize-payment`.
+7. Redirect the buyer to `checkoutUrl`.
+8. After redirect back, re-fetch the order with `GET /api/public/merch-orders/:orderId?email=...` or `GET /api/me/merch-orders`.
+9. Render the final state from the latest order response, not from redirect assumptions.
+
+## Inventory, Payment, And Order State Expectations
+
+### Inventory behavior
+
+- stock is checked at order creation
+- stock is checked again during payment confirmation
+- stock is deducted only after successful payment confirmation
+- there is no stock reservation timer in the current backend
+
+Frontend implication:
+
+- do not show hold timers
+- do not promise stock is reserved while an order is still `PENDING`
+
+### Order and payment states
+
+The main states the frontend should expect in the current merch flow are:
+
+- `PENDING`
+- `PAID`
+- `FAILED`
+
+Typical behavior:
+
+- paid orders start as `PENDING`
+- successful payment webhook moves the order to `PAID`
+- failed or abandoned payment can move the order to `FAILED`
+- free orders can be auto-confirmed immediately
+
+### Fulfillment states
+
+The frontend should expect:
+
+- `UNFULFILLED`
+- `PROCESSING`
+- `READY`
+- `SHIPPED`
+- `DELIVERED`
+- `COMPLETED`
+- `CANCELLED`
 
 ## Product UI Rules The Frontend Should Apply
 
-These rules are not all enforced directly by the backend, but they match backend behavior and reduce user error.
-
-### Product Create/Edit
-
-- if `inventoryTracked` is off, hide or disable inventory count inputs
-- do not show "in stock" numbers if `inventoryTracked === false`
+- if `inventoryTracked` is `false`, hide or disable stock count inputs
 - treat `basePriceMinor` as the fallback price only
-- if variants exist, buyer checkout should use variant prices instead of base price
-
-### Variant Selection
-
-- if `product.variants.length > 0`, require buyer to select one variant before order submit
-- use variant `name` as the default display label
-- if `attributesJson` is structured, the frontend can render chips like size/color
-
-### Product Availability
-
-Suggested frontend availability logic:
-
-- hide or disable products with `status !== ACTIVE` in any buyer-facing experience
+- if variants exist, use variant price and require variant selection
+- hide buyer-facing products whose `status !== ACTIVE`
 - if `inventoryTracked === true` and `inventoryCount === 0`, show out-of-stock
-- if using variants, evaluate stock at variant level when `variant.inventoryCount` is not `null`
+- for variant products, prefer variant-level stock when available
+
+## Common Failure Cases
+
+### Validation error shape
+
+```json
+{
+  "statusCode": 400,
+  "message": "Validation failed",
+  "error": "Bad Request",
+  "code": "VALIDATION_ERROR",
+  "details": [
+    {
+      "field": "items",
+      "errors": ["items must be an array"],
+      "children": []
+    }
+  ],
+  "timestamp": "2026-04-04T10:20:00.000Z",
+  "path": "/api/public/events/2a79d4d3-3c69-453a-94bf-81b5cb1ab4a0/merch-orders",
+  "requestId": "req_abc123def4"
+}
+```
+
+### Business-rule `400` messages to expect
+
+- `Merch cannot be ordered for this event`
+- `At least one merch item is required`
+- `One or more products are invalid for this event`
+- `Product "<name>" is not available`
+- `Invalid variant for selected product`
+- `Product "<name>" requires a variant selection`
+- `Only X unit(s) left for "<name>"`
+- `Only X unit(s) left for variant "<name>"`
+
+### Access and lookup errors
+
+- `401 UNAUTHORIZED` for protected dashboard routes without valid auth
+- `403 FORBIDDEN` for tenant members without the required role
+- `403 FORBIDDEN` for public guest order lookup with the wrong email
+- `404 NOT_FOUND` for missing event, product, variant, or order
+
+### Payment-init failure expectations
+
+The frontend should expect `400` or `403` when:
+
+- the merch order is not in a payable state
+- the buyer email does not match the order for guest checkout
+- the caller is neither the buyer nor an allowed tenant member
+- the payment provider initialization fails
+
+## UI To Hide For Now
+
+The backend is not ready for these storefront features yet, so the frontend should hide them:
+
+- shipping quote calculators
+- delivery-method selection driven by backend rates
+- cart reservation countdown timers
+- “items reserved for X minutes” messaging
+- guest order history lists beyond single-order email lookup
+- discount-code entry tied to backend pricing logic
+- storefront analytics or conversion dashboards
 
 ## Suggested Frontend Types
-
-These are useful TypeScript shapes for the frontend.
 
 ```ts
 export type ProductType = 'PHYSICAL' | 'DIGITAL';
 
 export type ProductStatus = 'DRAFT' | 'ACTIVE' | 'PAUSED' | 'ARCHIVED';
-
-export type FulfillmentStatus =
-  | 'UNFULFILLED'
-  | 'PROCESSING'
-  | 'READY'
-  | 'SHIPPED'
-  | 'DELIVERED'
-  | 'COMPLETED'
-  | 'CANCELLED';
 
 export type OrderStatus =
   | 'PENDING'
@@ -800,6 +1124,25 @@ export type OrderStatus =
   | 'EXPIRED'
   | 'REFUNDED'
   | 'FULFILLED';
+
+export type PaymentStatus =
+  | 'PENDING'
+  | 'AUTHORIZED'
+  | 'CAPTURED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'REFUNDED'
+  | 'REVERSED';
+
+export type FulfillmentStatus =
+  | 'UNFULFILLED'
+  | 'PROCESSING'
+  | 'READY'
+  | 'SHIPPED'
+  | 'DELIVERED'
+  | 'COMPLETED'
+  | 'CANCELLED';
 
 export interface ProductVariant {
   id: string;
@@ -841,8 +1184,16 @@ export interface MerchOrderItem {
   totalPriceMinor: number;
   metadataJson: Record<string, unknown> | null;
   createdAt: string;
-  product: Product;
-  productVariant: ProductVariant | null;
+  product: {
+    id: string;
+    name: string;
+    status: ProductStatus;
+  };
+  productVariant: {
+    id: string;
+    name: string;
+    sku: string | null;
+  } | null;
 }
 
 export interface MerchOrder {
@@ -850,111 +1201,33 @@ export interface MerchOrder {
   tenantId: string;
   eventId: string;
   buyerUserId: string | null;
+  buyerEmail: string | null;
   status: OrderStatus;
   fulfillmentStatus: FulfillmentStatus;
+  paymentStatus: PaymentStatus | null;
+  paymentReference: string | null;
   currency: string;
   subtotalMinor: number;
   feeMinor: number;
   shippingMinor: number;
   totalMinor: number;
   shippingAddressJson: Record<string, unknown> | null;
+  metadataJson: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
-  event?: Record<string, unknown>;
+  event?: {
+    id: string;
+    title: string;
+    slug: string;
+  };
   items: MerchOrderItem[];
 }
 ```
 
-## Common Failure Cases
+## Final Frontend Notes
 
-### Validation errors
-
-Example:
-
-```json
-{
-  "statusCode": 400,
-  "message": "Validation failed",
-  "error": "Bad Request",
-  "code": "VALIDATION_ERROR",
-  "details": [
-    {
-      "field": "items",
-      "errors": ["items must be an array"],
-      "children": []
-    }
-  ],
-  "timestamp": "2026-04-04T10:20:00.000Z",
-  "path": "/api/events/2a79d4d3-3c69-453a-94bf-81b5cb1ab4a0/merch-orders",
-  "requestId": "req_abc123def4"
-}
-```
-
-### Business-rule `400` cases the frontend should expect
-
-- `Merch cannot be ordered for this event`
-- `At least one merch item is required`
-- `One or more products are invalid for this event`
-- `Product "<name>" is not available`
-- `Invalid variant for selected product`
-- `Product "<name>" requires a variant selection`
-- `Only X unit(s) left for "<name>"`
-- `basePriceMinor cannot be negative`
-- `priceMinor cannot be negative`
-- `inventoryCount cannot be negative`
-
-### Authorization and access errors
-
-- `401 UNAUTHORIZED` if token is missing or invalid
-- `403 FORBIDDEN` if user is not in the tenant or lacks role permission
-- `404 NOT_FOUND` if event, product, variant, or merch order does not exist
-
-## Suggested Frontend Flows
-
-### Organizer Product Setup Flow
-
-1. Fetch event settings.
-2. If merch is not enabled, prompt to enable `modulesEnabledJson.merchandising`.
-3. Create product in `DRAFT`.
-4. Optionally create variants.
-5. Update product to `ACTIVE`.
-6. Use list products endpoint to refresh dashboard state.
-
-### Organizer Fulfillment Flow
-
-1. Fetch `GET /api/events/:eventId/merch-orders`.
-2. Group orders by `fulfillmentStatus` on the client.
-3. Open an order detail view using `GET /api/merch-orders/:merchOrderId`.
-4. Update status with `PATCH /api/merch-orders/:merchOrderId/fulfillment`.
-
-### Buyer Checkout Flow With Current Backend
-
-This flow is limited by the current API.
-
-1. Fetch products from an authenticated organizer-capable context only, because no public product API exists yet.
-2. Let the user select product and variant.
-3. Build the create-order payload.
-4. Submit `POST /api/events/:eventId/merch-orders`.
-5. If `order.totalMinor === 0`, treat the order as confirmed.
-6. If `order.totalMinor > 0`, treat the order as created but awaiting a payment capability that the backend does not yet expose.
-
-## Frontend Recommendations Before Full Buyer Merch Launch
-
-If the goal is a full public merch experience, the frontend should wait for or coordinate backend work for:
-
-- public product listing endpoint
-- public product detail endpoint if needed
-- guest merch order creation or explicitly authenticated buyer flow
-- merch payment checkout initialization
-- merch payment webhook confirmation path
-- buyer-facing order retrieval/history flow
-- shipping fee calculation if needed
-
-## Practical Frontend Notes
-
-- Treat all money values as minor units.
-- Do not send unknown UI-only fields; the backend rejects them.
-- Do not assume `metadataJson` on order create is persisted.
-- Do not assume `email` can be retrieved back from a merch order.
-- If you need strict fulfillment transitions, enforce them in the UI because the backend currently does not.
-- If you need public storefront pages, that requires new backend endpoints first.
+- treat all money values as minor units
+- do not send unknown UI-only fields
+- persist `orderId` plus `email` for guest recovery
+- wait for order re-fetch before showing payment success
+- use `imageUrl` returned by merch image finalize as the canonical public image URL

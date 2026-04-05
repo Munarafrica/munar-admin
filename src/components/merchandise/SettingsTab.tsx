@@ -1,8 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import type { MerchandiseSettings } from '../../types/merchandise';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
+import { toast } from 'sonner';
 
 interface SettingsTabProps {
   settings: MerchandiseSettings | null;
@@ -20,6 +21,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
   const [shippingPolicyText, setShippingPolicyText] = useState('');
   const [pickupInstructions, setPickupInstructions] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!settings) {
@@ -30,7 +33,27 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
     setHeadline(String(settings.merchandisingJson.storeHeadline ?? ''));
     setShippingPolicyText(String(settings.merchandisingJson.shippingPolicyText ?? ''));
     setPickupInstructions(String(settings.merchandisingJson.pickupInstructions ?? ''));
+    setSaveMessage(null);
+    setSaveError(null);
   }, [settings]);
+
+  const hasChanges = useMemo(() => {
+    if (!settings) {
+      return (
+        enabled !== false ||
+        headline.trim() !== '' ||
+        shippingPolicyText.trim() !== '' ||
+        pickupInstructions.trim() !== ''
+      );
+    }
+
+    return (
+      enabled !== settings.enabled ||
+      headline.trim() !== String(settings.merchandisingJson.storeHeadline ?? '') ||
+      shippingPolicyText.trim() !== String(settings.merchandisingJson.shippingPolicyText ?? '') ||
+      pickupInstructions.trim() !== String(settings.merchandisingJson.pickupInstructions ?? '')
+    );
+  }, [enabled, headline, pickupInstructions, settings, shippingPolicyText]);
 
   if (isLoading) {
     return <p className="text-sm text-slate-500 dark:text-slate-400">Loading merch settings...</p>;
@@ -38,6 +61,8 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   const handleSave = async () => {
     setIsSaving(true);
+    setSaveMessage(null);
+    setSaveError(null);
     try {
       await onSave({
         enabled,
@@ -47,6 +72,12 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
           pickupInstructions: pickupInstructions.trim(),
         },
       });
+      setSaveMessage('Merch settings saved successfully.');
+      toast.success('Merch settings saved');
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to save merch settings right now.';
+      setSaveError(message);
+      toast.error(message);
     } finally {
       setIsSaving(false);
     }
@@ -54,12 +85,24 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
   return (
     <div className="max-w-3xl space-y-6">
+      {saveMessage ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800 dark:border-emerald-900/40 dark:bg-emerald-950/20 dark:text-emerald-200">
+          {saveMessage}
+        </div>
+      ) : null}
+
+      {saveError ? (
+        <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900/40 dark:bg-red-950/20 dark:text-red-200">
+          {saveError}
+        </div>
+      ) : null}
+
       <section className="rounded-2xl border border-slate-200 p-5 dark:border-slate-800">
         <div className="flex items-center justify-between gap-4">
           <div>
-            <p className="font-semibold text-slate-900 dark:text-slate-100">Enable merchandise</p>
+            <p className="font-semibold text-slate-900 dark:text-slate-100">Turn on merchandise</p>
             <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
-              Frontend visibility should follow `modulesEnabledJson.merchandising`.
+              Switch this on when you are ready to add products and accept merchandise orders.
             </p>
           </div>
           <button
@@ -76,6 +119,10 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
 
       <section className="rounded-2xl border border-slate-200 p-5 dark:border-slate-800">
         <p className="font-semibold text-slate-900 dark:text-slate-100">Store copy</p>
+        <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+          This is the customer-facing text for your merchandise experience. Use it to describe your merch store,
+          explain delivery expectations, and tell buyers how pickup works.
+        </p>
         <div className="mt-4 space-y-4">
           <div className="space-y-2">
             <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Headline</label>
@@ -104,20 +151,35 @@ export const SettingsTab: React.FC<SettingsTabProps> = ({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-100">
-        <p className="font-semibold">Current backend limits</p>
-        <ul className="mt-3 list-disc space-y-2 pl-5">
-          <li>No public merch storefront endpoints yet.</li>
-          <li>No merch payment initialization endpoint yet.</li>
-          <li>Merch order creation still requires auth in practice.</li>
-          <li>`email` is required on create but not returned on later reads.</li>
-          <li>`metadataJson` on order create should not be relied on for persistence.</li>
+      <section className="rounded-2xl border border-amber-300 bg-amber-50/95 p-5 text-sm text-amber-950 shadow-sm shadow-amber-100/40 dark:border-amber-700/60 dark:bg-amber-500/12 dark:text-amber-50">
+        <p className="font-semibold text-amber-950 dark:text-amber-50">Before you launch merch</p>
+        <p className="mt-2 leading-6 text-amber-900 dark:text-amber-100/90">
+          A few parts of the merchandise experience are still limited right now, so it is best to use this for
+          product setup and order management from your dashboard.
+        </p>
+        <ul className="mt-4 space-y-3 text-amber-900 dark:text-amber-100/90">
+          <li className="flex items-start gap-3 rounded-xl bg-amber-100/70 px-3 py-2 dark:bg-amber-400/10">
+            <span className="mt-0.5 text-base font-bold leading-none text-amber-800 dark:text-amber-300">•</span>
+            <span>Customers cannot browse merchandise on a public store page yet.</span>
+          </li>
+          <li className="flex items-start gap-3 rounded-xl bg-amber-100/70 px-3 py-2 dark:bg-amber-400/10">
+            <span className="mt-0.5 text-base font-bold leading-none text-amber-800 dark:text-amber-300">•</span>
+            <span>Online payment for merchandise is not fully available yet.</span>
+          </li>
+          <li className="flex items-start gap-3 rounded-xl bg-amber-100/70 px-3 py-2 dark:bg-amber-400/10">
+            <span className="mt-0.5 text-base font-bold leading-none text-amber-800 dark:text-amber-300">•</span>
+            <span>Merch orders currently work best for signed-in users.</span>
+          </li>
+          <li className="flex items-start gap-3 rounded-xl bg-amber-100/70 px-3 py-2 dark:bg-amber-400/10">
+            <span className="mt-0.5 text-base font-bold leading-none text-amber-800 dark:text-amber-300">•</span>
+            <span>Customer email is collected during checkout, but may not appear again later in order details.</span>
+          </li>
         </ul>
       </section>
 
       <div className="flex justify-end">
-        <Button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? 'Saving...' : 'Save merch settings'}
+        <Button onClick={handleSave} disabled={isSaving || !hasChanges}>
+          {isSaving ? 'Saving...' : hasChanges ? 'Save merch settings' : 'No changes to save'}
         </Button>
       </div>
     </div>

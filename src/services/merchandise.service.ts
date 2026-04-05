@@ -13,12 +13,15 @@ import type {
   MerchandiseCapabilityFlags,
   MerchandiseSettings,
   Order,
+  PublicProductsResponse,
   Product,
   ProductStatus,
   ProductType,
   UpdateOrderRequest,
   UpdateProductRequest,
   CreateProductVariantRequest,
+  InitializeMerchPaymentRequest,
+  InitializeMerchPaymentResponse,
 } from '../types/merchandise';
 import {
   delay,
@@ -38,12 +41,29 @@ type EventSettingsResponse = {
   updatedAt: string;
 };
 
+type MerchImagePresignResponse = {
+  assetId: string;
+  uploadUrl: string;
+  fileUrl: string;
+  headers: Record<string, string>;
+  mimeType: string;
+  size: number;
+  maxFileSizeBytes: number;
+};
+
+type MerchImageCompleteResponse = {
+  url: string;
+  mimeType: string;
+  size: number;
+};
+
 type LegacyProduct = (typeof legacyMockProducts)[number];
 type LegacyOrder = (typeof legacyMockOrders)[number];
 
 const mockProductsStore = new Map<string, Product[]>();
 const mockOrdersStore = new Map<string, Order[]>();
 const mockSettingsStore = new Map<string, MerchandiseSettings>();
+const mockUploadStore = new Map<string, { fileUrl: string; contentType: string; size: number }>();
 
 const DEFAULT_CAPABILITIES: MerchandiseCapabilityFlags = {
   publicStorefrontAvailable: false,
@@ -123,6 +143,33 @@ function normalizeProduct(product: LegacyProduct): Product {
     category: product.category,
     tags: product.tags,
     createdBy: product.createdBy,
+  };
+}
+
+function normalizeBackendProduct(product: Product): Product {
+  return {
+    ...product,
+    description: product.description ?? null,
+    imageUrl: product.imageUrl ?? null,
+    metadataJson: product.metadataJson ?? null,
+    variants: product.variants ?? [],
+  };
+}
+
+function normalizeBackendOrder(order: Order): Order {
+  return {
+    ...order,
+    buyerEmail: order.buyerEmail ?? order.displayEmail ?? null,
+    paymentStatus: order.paymentStatus ?? null,
+    paymentReference: order.paymentReference ?? null,
+    metadataJson: order.metadataJson ?? null,
+    shippingAddressJson: order.shippingAddressJson ?? null,
+    items: (order.items ?? []).map((item) => ({
+      ...item,
+      metadataJson: item.metadataJson ?? null,
+      product: normalizeBackendProduct(item.product),
+      productVariant: item.productVariant ?? null,
+    })),
   };
 }
 
@@ -352,18 +399,94 @@ function buildAnalytics(products: Product[], orders: Order[]): MerchandiseAnalyt
 }
 
 async function getEventSettings(eventId: string): Promise<EventSettingsResponse> {
-  return apiClient.get<EventSettingsResponse>(`/events/${eventId}/website-settings`);
+  return apiClient.get<EventSettingsResponse>(`/events/${eventId}/settings`);
 }
 
 async function patchEventSettings(
   eventId: string,
   payload: Pick<EventSettingsResponse, 'modulesEnabledJson' | 'merchandisingJson'>,
 ): Promise<EventSettingsResponse> {
-  return apiClient.patch<EventSettingsResponse>(`/events/${eventId}/website-settings`, payload);
+  return apiClient.patch<EventSettingsResponse>(`/events/${eventId}/settings`, payload);
 }
 
 export async function getCapabilityFlags(): Promise<MerchandiseCapabilityFlags> {
   return DEFAULT_CAPABILITIES;
+}
+
+export async function presignMerchImageUpload(
+  eventId: string,
+  file: { fileName: string; contentType: string; size: number },
+): Promise<MerchImagePresignResponse> {
+  if (config.features.useMockData) {
+    await delay();
+    const assetId = generateId('asset');
+    const fileUrl = `mock-merch-image://${assetId}/${file.fileName}`;
+    mockUploadStore.set(assetId, {
+      fileUrl,
+      contentType: file.contentType,
+      size: file.size,
+    });
+    return {
+      assetId,
+      uploadUrl: fileUrl,
+      fileUrl,
+      headers: { 'Content-Type': file.contentType },
+      mimeType: file.contentType,
+      size: file.size,
+      maxFileSizeBytes: 10 * 1024 * 1024,
+    };
+  }
+
+  return apiClient.post<MerchImagePresignResponse>('/uploads/merch-images/presign', {
+    eventId,
+    fileName: file.fileName,
+    contentType: file.contentType,
+    size: file.size,
+  });
+}
+
+export async function uploadMerchImageBinary(
+  uploadUrl: string,
+  file: File,
+  headers: Record<string, string>,
+): Promise<void> {
+  if (config.features.useMockData) {
+    await delay();
+    return;
+  }
+
+  const response = await fetch(uploadUrl, {
+    method: 'PUT',
+    headers,
+    body: file,
+  });
+
+  if (!response.ok) {
+    throw new Error('Image upload failed while sending the file.');
+  }
+}
+
+export async function finalizeMerchImageUpload(
+  assetId: string,
+  file: { contentType: string; size: number },
+): Promise<MerchImageCompleteResponse> {
+  if (config.features.useMockData) {
+    await delay();
+    const stored = mockUploadStore.get(assetId);
+    if (!stored) {
+      throw new Error('Image upload could not be completed.');
+    }
+    return {
+      url: stored.fileUrl,
+      mimeType: stored.contentType,
+      size: stored.size,
+    };
+  }
+
+  return apiClient.post<MerchImageCompleteResponse>(`/uploads/merch-images/${assetId}/complete`, {
+    contentType: file.contentType,
+    size: file.size,
+  });
 }
 
 export async function getProducts(eventId: string, params?: SearchParams): Promise<Product[]> {
@@ -380,7 +503,9 @@ export async function getProducts(eventId: string, params?: SearchParams): Promi
     } as Record<string, string | undefined>,
   });
 
-  return response.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return response
+    .map(normalizeBackendProduct)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 export async function getProduct(eventId: string, productId: string): Promise<Product> {
@@ -393,7 +518,7 @@ export async function getProduct(eventId: string, productId: string): Promise<Pr
     return product;
   }
 
-  return apiClient.get<Product>(`/products/${productId}`);
+  return normalizeBackendProduct(await apiClient.get<Product>(`/products/${productId}`));
 }
 
 export async function createProduct(eventId: string, data: CreateProductRequest): Promise<Product> {
@@ -421,7 +546,7 @@ export async function createProduct(eventId: string, data: CreateProductRequest)
     return product;
   }
 
-  return apiClient.post<Product>(`/events/${eventId}/products`, data);
+  return normalizeBackendProduct(await apiClient.post<Product>(`/events/${eventId}/products`, data));
 }
 
 export async function updateProduct(eventId: string, productId: string, data: UpdateProductRequest): Promise<Product> {
@@ -449,7 +574,7 @@ export async function updateProduct(eventId: string, productId: string, data: Up
     return updated;
   }
 
-  return apiClient.patch<Product>(`/products/${productId}`, data);
+  return normalizeBackendProduct(await apiClient.patch<Product>(`/products/${productId}`, data));
 }
 
 export async function deleteProduct(eventId: string, productId: string): Promise<void> {
@@ -529,7 +654,8 @@ export async function getOrders(eventId: string, params?: SearchParams): Promise
   }
 
   const orders = await apiClient.get<Order[]>(`/events/${eventId}/merch-orders`);
-  const data = applyOrderFilters(orders, params);
+  const normalized = orders.map(normalizeBackendOrder);
+  const data = applyOrderFilters(normalized, params);
   return { data, meta: createMeta(data) };
 }
 
@@ -543,7 +669,7 @@ export async function getOrder(eventId: string, orderId: string): Promise<Order>
     return order;
   }
 
-  return apiClient.get<Order>(`/merch-orders/${orderId}`);
+  return normalizeBackendOrder(await apiClient.get<Order>(`/merch-orders/${orderId}`));
 }
 
 export async function createOrder(eventId: string, data: CreateOrderRequest): Promise<Order> {
@@ -608,7 +734,7 @@ export async function createOrder(eventId: string, data: CreateOrderRequest): Pr
     return order;
   }
 
-  return apiClient.post<Order>(`/events/${eventId}/merch-orders`, data);
+  return normalizeBackendOrder(await apiClient.post<Order>(`/events/${eventId}/merch-orders`, data));
 }
 
 export async function updateOrder(_eventId: string, orderId: string, data: UpdateOrderRequest): Promise<Order> {
@@ -633,7 +759,55 @@ export async function updateOrder(_eventId: string, orderId: string, data: Updat
     throw new Error('Order not found');
   }
 
-  return apiClient.patch<Order>(`/merch-orders/${orderId}/fulfillment`, data);
+  return normalizeBackendOrder(await apiClient.patch<Order>(`/merch-orders/${orderId}/fulfillment`, data));
+}
+
+export async function getPublicProducts(
+  eventSlug: string,
+  params?: {
+    search?: string;
+    productType?: ProductType;
+    category?: string;
+    inStock?: boolean;
+  },
+): Promise<PublicProductsResponse> {
+  const response = await apiClient.get<PublicProductsResponse>(`/public/events/${eventSlug}/products`, {
+    params: {
+      search: params?.search,
+      productType: params?.productType,
+      category: params?.category,
+      inStock: params?.inStock,
+    },
+  });
+
+  return {
+    event: response.event,
+    products: (response.products ?? []).map(normalizeBackendProduct),
+  };
+}
+
+export async function getPublicProduct(productId: string): Promise<Product> {
+  return normalizeBackendProduct(await apiClient.get<Product>(`/public/products/${productId}`));
+}
+
+export async function createPublicOrder(eventId: string, data: CreateOrderRequest): Promise<Order> {
+  return normalizeBackendOrder(await apiClient.post<Order>(`/public/events/${eventId}/merch-orders`, data));
+}
+
+export async function getPublicOrder(orderId: string, email: string): Promise<Order> {
+  return normalizeBackendOrder(await apiClient.get<Order>(`/public/merch-orders/${orderId}`, {
+    params: { email },
+  }));
+}
+
+export async function initializeMerchPayment(
+  merchOrderId: string,
+  data: InitializeMerchPaymentRequest,
+): Promise<InitializeMerchPaymentResponse> {
+  return apiClient.post<InitializeMerchPaymentResponse>(
+    `/payments/merch-orders/${merchOrderId}/initialize-payment`,
+    data,
+  );
 }
 
 export async function cancelOrder(eventId: string, orderId: string): Promise<Order> {

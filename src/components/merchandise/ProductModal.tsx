@@ -8,7 +8,9 @@ import type {
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
-import { X, Plus, Trash2 } from 'lucide-react';
+import { X, Plus, Trash2, Upload } from 'lucide-react';
+import { merchandiseService } from '../../services';
+import { toast } from 'sonner';
 
 export interface ProductModalValues {
   product: CreateProductRequest;
@@ -26,6 +28,7 @@ interface ProductModalProps {
   onClose: () => void;
   onSave: (values: ProductModalValues) => Promise<void>;
   product?: Product;
+  eventId?: string | null;
 }
 
 type VariantDraft = {
@@ -56,13 +59,16 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   onClose,
   onSave,
   product,
+  eventId,
 }) => {
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploadingImage, setIsUploadingImage] = useState(false);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [productType, setProductType] = useState<ProductType>('PHYSICAL');
   const [basePrice, setBasePrice] = useState('');
   const [imageUrl, setImageUrl] = useState('');
+  const [imageFileName, setImageFileName] = useState('');
   const [inventoryTracked, setInventoryTracked] = useState(true);
   const [inventoryCount, setInventoryCount] = useState('');
   const [category, setCategory] = useState('');
@@ -79,6 +85,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
       setProductType('PHYSICAL');
       setBasePrice('');
       setImageUrl('');
+      setImageFileName('');
       setInventoryTracked(true);
       setInventoryCount('');
       setCategory('');
@@ -91,6 +98,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     setProductType(product.productType);
     setBasePrice(toMajorCurrency(product.basePriceMinor));
     setImageUrl(product.imageUrl ?? '');
+    setImageFileName('');
     setInventoryTracked(product.inventoryTracked);
     setInventoryCount(product.inventoryCount?.toString() ?? '');
     setCategory(String(product.metadataJson?.category ?? ''));
@@ -117,6 +125,48 @@ export const ProductModal: React.FC<ProductModalProps> = ({
     setVariants((current) =>
       current.map((variant) => (variant.id === id ? { ...variant, [field]: value } : variant)),
     );
+  };
+
+  const handleImageSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) {
+      return;
+    }
+
+    if (!eventId) {
+      toast.error('No event selected for image upload.');
+      return;
+    }
+
+    setIsUploadingImage(true);
+    setImageFileName(file.name);
+
+    void (async () => {
+      try {
+        const presign = await merchandiseService.presignMerchImageUpload(eventId, {
+          fileName: file.name,
+          contentType: file.type,
+          size: file.size,
+        });
+
+        await merchandiseService.uploadMerchImageBinary(presign.uploadUrl, file, presign.headers);
+
+        const finalized = await merchandiseService.finalizeMerchImageUpload(presign.assetId, {
+          contentType: file.type,
+          size: file.size,
+        });
+
+        setImageUrl(finalized.url);
+        toast.success('Product image uploaded');
+      } catch (error) {
+        setImageFileName('');
+        setImageUrl('');
+        toast.error(error instanceof Error ? error.message : 'Image upload failed');
+      } finally {
+        setIsUploadingImage(false);
+        event.target.value = '';
+      }
+    })();
   };
 
   const handleSave = async () => {
@@ -160,17 +210,18 @@ export const ProductModal: React.FC<ProductModalProps> = ({
   };
 
   return createPortal(
-    <div className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/40 p-4 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[9999] overflow-y-auto bg-black/40 px-4 py-20 backdrop-blur-sm md:py-24">
+      <div className="absolute inset-0" onClick={onClose} aria-hidden="true" />
       <div
-        className="max-h-[90vh] w-full max-w-3xl overflow-auto rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900"
+        className="relative mx-auto my-0 w-full max-w-3xl rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-900 md:max-h-[calc(100vh-10rem)] md:overflow-auto"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5 dark:border-slate-800">
+        <div className="flex items-start justify-between border-b border-slate-200 px-6 py-5 mt-4 dark:border-slate-800">
           <div>
             <p className="text-xs uppercase tracking-[0.3em] text-slate-400">
               {product ? 'Edit product' : 'Create product'}
             </p>
-            <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100">
+            <h2 className="mt-1 text-xl font-semibold text-slate-900 dark:text-slate-100 mb-4">
               {product ? product.name : 'New merchandise product'}
             </h2>
           </div>
@@ -220,12 +271,26 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Image URL</label>
-              <Input
-                value={imageUrl}
-                onChange={(event) => setImageUrl(event.target.value)}
-                placeholder="https://cdn.example.com/merch/tshirt.png"
-              />
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Product image</label>
+              <label className="flex h-10 cursor-pointer items-center gap-3 rounded-md border border-slate-200 bg-input-background px-3 text-sm text-slate-500 transition-colors hover:border-indigo-400 dark:border-slate-700 dark:bg-input/30 dark:text-slate-400">
+                <Upload className="h-4 w-4 shrink-0 text-slate-400 dark:text-slate-500" />
+                <span className="min-w-0 flex-1 truncate">
+                  {isUploadingImage ? 'Uploading image...' : imageFileName || 'Choose a PNG, JPG, JPEG, or WEBP image'}
+                </span>
+                <span className="shrink-0 text-xs font-medium text-slate-600 dark:text-slate-300">
+                  Browse
+                </span>
+                <input
+                  type="file"
+                  accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp"
+                  className="hidden"
+                  onChange={handleImageSelect}
+                  disabled={isUploadingImage}
+                />
+              </label>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                Use a clear square image for the best product preview.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -239,7 +304,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               <div>
                 <p className="font-medium text-slate-900 dark:text-slate-100">Inventory</p>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  The backend treats `inventoryTracked=false` as no stock count.
+                  Turn this on if you want to keep track of how many units are available.
                 </p>
               </div>
               <button
@@ -272,7 +337,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
               <div>
                 <p className="font-medium text-slate-900 dark:text-slate-100">Variants</p>
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  Variants are created through dedicated backend endpoints after product creation.
+                  Add options like size or color if this product comes in multiple versions.
                 </p>
               </div>
               <Button type="button" variant="outline" size="sm" onClick={() => setVariants((current) => [...current, emptyVariant()])}>
@@ -284,7 +349,7 @@ export const ProductModal: React.FC<ProductModalProps> = ({
             <div className="mt-4 space-y-3">
               {variants.length === 0 ? (
                 <p className="text-sm text-slate-500 dark:text-slate-400">
-                  No variants configured. Leave this empty for single-SKU products.
+                  No variants added yet. Leave this empty if this product has just one version.
                 </p>
               ) : null}
 
@@ -341,16 +406,15 @@ export const ProductModal: React.FC<ProductModalProps> = ({
           </section>
         </div>
 
-        <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-5 dark:border-slate-800">
-          <Button variant="outline" onClick={onClose} disabled={isSaving}>
+        <div className="flex items-center justify-end gap-3 border-t border-slate-200 px-6 py-8 dark:border-slate-800">
+          <Button variant="outline" onClick={onClose} disabled={isSaving || isUploadingImage} className="h-11 px-5">
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={!canSubmit || isSaving}>
+          <Button onClick={handleSave} disabled={!canSubmit || isSaving || isUploadingImage} className="h-11 px-5">
             {isSaving ? 'Saving...' : product ? 'Save changes' : 'Create product'}
           </Button>
         </div>
       </div>
-      <button className="absolute inset-0 -z-10" onClick={onClose} aria-label="Close product modal" />
     </div>,
     document.body,
   );

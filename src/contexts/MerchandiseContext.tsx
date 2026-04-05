@@ -110,7 +110,7 @@ export function MerchandiseProvider({ children, eventId, autoLoad = true }: Merc
   const updateSettings = useCallback(
     async (nextSettings: Partial<MerchandiseSettings>) => {
       if (!eventId) {
-        return;
+        throw new Error('No event selected for merchandise settings.');
       }
 
       const settings = await merchandiseService.updateMerchandiseSettings(eventId, nextSettings);

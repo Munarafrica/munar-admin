@@ -12,6 +12,16 @@ export type OrderStatus =
   | 'REFUNDED'
   | 'FULFILLED';
 
+export type PaymentStatus =
+  | 'PENDING'
+  | 'AUTHORIZED'
+  | 'CAPTURED'
+  | 'FAILED'
+  | 'CANCELLED'
+  | 'EXPIRED'
+  | 'REFUNDED'
+  | 'REVERSED';
+
 export type FulfillmentStatus =
   | 'UNFULFILLED'
   | 'PROCESSING'
@@ -96,14 +106,18 @@ export interface MerchOrder {
   tenantId: string;
   eventId: string;
   buyerUserId: string | null;
+  buyerEmail?: string | null;
   status: OrderStatus;
   fulfillmentStatus: FulfillmentStatus;
+  paymentStatus?: PaymentStatus | null;
+  paymentReference?: string | null;
   currency: string;
   subtotalMinor: number;
   feeMinor: number;
   shippingMinor: number;
   totalMinor: number;
   shippingAddressJson: Record<string, unknown> | null;
+  metadataJson?: Record<string, unknown> | null;
   createdAt: string;
   updatedAt: string;
   event?: Record<string, unknown>;
@@ -206,6 +220,32 @@ export interface CreateOrderRequest {
   }>;
   shippingAddressJson?: Record<string, unknown>;
   metadataJson?: Record<string, unknown>;
+}
+
+export interface PublicProductsResponse {
+  event: {
+    id: string;
+    slug: string;
+    title: string;
+    summary?: string | null;
+    currency?: string | null;
+  };
+  products: Product[];
+}
+
+export interface InitializeMerchPaymentRequest {
+  email: string;
+  callbackUrl: string;
+}
+
+export interface InitializeMerchPaymentResponse {
+  checkoutUrl: string;
+  reference: string;
+  status: string;
+  provider?: string;
+  merchOrderId: string;
+  transactionId?: string;
+  accessCode?: string;
 }
 
 export interface UpdateOrderRequest {

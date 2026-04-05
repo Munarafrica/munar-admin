@@ -18,6 +18,7 @@ import { merchandiseService } from '../services';
 import {
   AlertTriangle,
   BarChart3,
+  ChevronLeft,
   Package,
   Plus,
   Search,
@@ -148,8 +149,9 @@ const MerchandiseManagementContent: React.FC<MerchandiseManagementProps> = ({ on
           <div className="space-y-2">
             <button
               onClick={() => onNavigate('event-dashboard')}
-              className="text-sm text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
+              className="mt-6 inline-flex items-center gap-1.5 text-sm text-slate-500 transition-colors hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-100"
             >
+              <ChevronLeft className="h-4 w-4" />
               Back to event dashboard
             </button>
             <div>
@@ -164,7 +166,7 @@ const MerchandiseManagementContent: React.FC<MerchandiseManagementProps> = ({ on
           <div className="flex flex-wrap gap-3">
             <Button variant="outline" onClick={() => setActiveTab('settings')}>
               <Settings className="mr-2 h-4 w-4" />
-              Merch settings
+              Merchandise Settings
             </Button>
             <Button
               onClick={() => {
@@ -179,15 +181,28 @@ const MerchandiseManagementContent: React.FC<MerchandiseManagementProps> = ({ on
         </div>
 
         {!merchEnabled ? (
-          <section className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/20 dark:text-amber-100">
+          <section className="rounded-3xl border border-amber-300 bg-amber-50/95 p-5 text-amber-950 shadow-sm shadow-amber-100/50 dark:border-amber-700/60 dark:bg-amber-500/12 dark:text-amber-50">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
-              <div>
-                <p className="font-semibold">Merch is not enabled in event settings</p>
-                <p className="mt-1 text-sm">
-                  The backend can still accept merch requests even while the module flag is off, but the frontend
-                  should use `modulesEnabledJson.merchandising` to decide whether merch UI is available.
+              <div className="mt-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-200/80 text-amber-900 dark:bg-amber-400/20 dark:text-amber-100">
+                <AlertTriangle className="h-5 w-5" />
+              </div>
+              <div className="flex-1">
+                <p className="font-semibold text-amber-950 dark:text-amber-50">
+                  Merchandise is currently turned off
                 </p>
+                <p className="mt-1 text-sm leading-6 text-amber-900 dark:text-amber-100/90">
+                  Turn on merchandise in your event settings to start adding products and managing orders.
+                </p>
+                <div className="mt-4">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setActiveTab('settings')}
+                    className="border-amber-400 bg-white/70 text-amber-950 hover:bg-white dark:border-amber-500/50 dark:bg-amber-400/10 dark:text-amber-50 dark:hover:bg-amber-400/20"
+                  >
+                    Open merch settings
+                  </Button>
+                </div>
               </div>
             </div>
           </section>
@@ -236,7 +251,7 @@ const MerchandiseManagementContent: React.FC<MerchandiseManagementProps> = ({ on
               <TabsTrigger value="products">Products</TabsTrigger>
               <TabsTrigger value="orders">Orders</TabsTrigger>
               <TabsTrigger value="analytics">Analytics</TabsTrigger>
-              <TabsTrigger value="settings">Settings</TabsTrigger>
+              <TabsTrigger value="settings">Merchandise Settings</TabsTrigger>
             </TabsList>
 
             <TabsContent value="products" className="space-y-6">
@@ -265,18 +280,19 @@ const MerchandiseManagementContent: React.FC<MerchandiseManagementProps> = ({ on
                   </p>
                 </div>
               ) : (
-                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                <div className="flex flex-wrap items-start gap-5">
                   {filteredProducts.map((product) => (
-                    <ProductCard
-                      key={product.id}
-                      product={product}
-                      onEdit={(current) => {
-                        setEditingProduct(current);
-                        setShowProductModal(true);
-                      }}
-                      onPublish={(current) => publishProduct(current.id)}
-                      onArchive={(current) => archiveProduct(current.id)}
-                    />
+                    <div key={product.id} className="flex-none" style={{ width: 240, maxWidth: 240 }}>
+                      <ProductCard
+                        product={product}
+                        onEdit={(current) => {
+                          setEditingProduct(current);
+                          setShowProductModal(true);
+                        }}
+                        onPublish={(current) => publishProduct(current.id)}
+                        onArchive={(current) => archiveProduct(current.id)}
+                      />
+                    </div>
                   ))}
                 </div>
               )}
@@ -350,6 +366,7 @@ const MerchandiseManagementContent: React.FC<MerchandiseManagementProps> = ({ on
         }}
         onSave={handleSaveProduct}
         product={editingProduct}
+        eventId={eventId}
       />
 
       <OrderDetailModal

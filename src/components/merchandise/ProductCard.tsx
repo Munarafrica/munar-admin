@@ -45,13 +45,17 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onPublish,
   onArchive,
 }) => {
+  const variantCount = product.variants?.length ?? 0;
   const stockLabel = !product.inventoryTracked
     ? 'Inventory off'
     : `${product.inventoryCount ?? 0} in stock`;
 
   return (
-    <Card className="overflow-hidden border-slate-200 dark:border-slate-800">
-      <div className="aspect-[4/3] bg-slate-100 dark:bg-slate-800">
+    <Card
+      className="overflow-hidden border-slate-200 dark:border-slate-800"
+      style={{ width: 240, maxWidth: 240 }}
+    >
+      <div className="h-48 overflow-hidden bg-slate-100 dark:bg-slate-800">
         {product.imageUrl ? (
           <img src={product.imageUrl} alt={product.name} className="h-full w-full object-cover" />
         ) : (
@@ -60,13 +64,14 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           </div>
         )}
       </div>
-
-      <div className="space-y-4 p-4">
+      <div className="space-y-3 p-4">
         <div className="flex items-start justify-between gap-3">
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <Badge className={`border-0 ${statusTone[product.status]}`}>{product.status}</Badge>
             <div>
-              <h3 className="font-semibold text-slate-900 dark:text-slate-100">{product.name}</h3>
+              <h3 className="line-clamp-2 text-[15px] font-semibold text-slate-900 dark:text-slate-100">
+                {product.name}
+              </h3>
               <p className="text-sm text-slate-500 dark:text-slate-400">
                 {product.productType === 'DIGITAL' ? 'Digital product' : 'Physical product'}
               </p>
@@ -114,10 +119,10 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           <p className="text-sm text-slate-400 dark:text-slate-500">No description added yet.</p>
         )}
 
-        <div className="flex items-end justify-between gap-4 border-t border-slate-200 pt-4 dark:border-slate-800">
+        <div className="flex items-end justify-between gap-4 border-t border-slate-200 pt-3 dark:border-slate-800">
           <div>
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Base price</p>
-            <p className="text-lg font-semibold text-slate-900 dark:text-slate-100">
+            <p className="text-base font-semibold text-slate-900 dark:text-slate-100">
               {formatMoney(product.basePriceMinor, product.currency)}
             </p>
           </div>
@@ -125,7 +130,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Inventory</p>
             <p className="text-sm font-medium text-slate-700 dark:text-slate-200">{stockLabel}</p>
             <p className="text-xs text-slate-400">
-              {product.variants.length > 0 ? `${product.variants.length} variant(s)` : 'No variants'}
+              {variantCount > 0 ? `${variantCount} variant(s)` : 'No variants'}
             </p>
           </div>
         </div>
