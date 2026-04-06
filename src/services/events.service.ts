@@ -640,9 +640,9 @@ class EventsService {
     if (config.features.useMockData) {
       await delay(400);
       return [
-        { id: 'm1', label: 'Tickets Sold/registrations', value: '3/5', context: 'setup' },
+        { id: 'm1', label: 'Registrations', value: '3', context: 'setup' },
         { id: 'm2', label: 'Website Views', value: '12', context: 'setup' },
-        { id: 'm3', label: 'Voting Activity', value: 'Not Configured', context: 'setup' },
+        { id: 'm3', label: 'Tickets Sold', value: '3', context: 'setup' },
         { id: 'm4', label: 'Total Revenue', value: '₦4.5M', context: 'setup' },
         { id: 'm5', label: 'Check-ins', value: '0', context: 'setup' },
         { id: 'm6', label: 'Survey Responses', value: '0', context: 'setup' },
@@ -650,8 +650,44 @@ class EventsService {
     }
 
     try {
-      const response = await apiClient.get<ApiResponse<Metric[]>>(`/events/${eventId}/metrics`);
-      return response.data;
+      const response = await apiClient.get<ApiResponse<{
+        eventId: string;
+        currency?: string;
+        summary?: Record<string, { value?: number; unit?: string; scope?: string }>;
+      }> | {
+        eventId: string;
+        currency?: string;
+        summary?: Record<string, { value?: number; unit?: string; scope?: string }>;
+      }>(`/events/${eventId}/analytics`);
+      const payload =
+        response && typeof response === 'object' && 'data' in response
+          ? response.data
+          : response;
+
+      if (payload?.summary) {
+        const currency = payload.currency || config.app.defaultCurrency;
+        const revenueRaw = Number(payload.summary.totalRevenue?.value ?? 0);
+        const revenue = payload.summary.totalRevenue?.unit === 'minor'
+          ? revenueRaw / 100
+          : revenueRaw;
+
+        return [
+          { id: 'm1', label: 'Registrations', value: Number(payload.summary.registrations?.value ?? 0), context: 'setup' },
+          { id: 'm2', label: 'Website Views', value: Number(payload.summary.websiteViews?.value ?? 0), context: 'setup' },
+          { id: 'm3', label: 'Tickets Sold', value: Number(payload.summary.ticketsSold?.value ?? 0), context: 'setup' },
+          {
+            id: 'm4',
+            label: 'Gross Revenue',
+            value: new Intl.NumberFormat('en-NG', { style: 'currency', currency, minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(revenue),
+            context: 'setup',
+          },
+          { id: 'm5', label: 'Check-ins', value: Number(payload.summary.checkIns?.value ?? 0), context: 'setup' },
+          { id: 'm6', label: 'Survey Responses', value: Number(payload.summary.surveyResponses?.value ?? 0), context: 'setup' },
+        ];
+      }
+
+      const legacyResponse = await apiClient.get<ApiResponse<Metric[]>>(`/events/${eventId}/metrics`);
+      return legacyResponse.data;
     } catch {
       return [
         { id: 'm1', label: 'Registrations', value: '0', context: 'setup' },

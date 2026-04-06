@@ -3,8 +3,8 @@
 // Reads website config from websiteService, renders the appropriate template.
 // In preview mode (?preview=1), listens for postMessage from the builder canvas.
 
-import React, { useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import React, { useEffect, useRef, useState } from 'react';
+import { useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { Lock, EyeOff, Eye } from 'lucide-react';
 import { useEvent } from '../../contexts';
 import { websiteService } from '../../services/website.service';
@@ -154,8 +154,10 @@ function PasswordGate({ config, onUnlock }: { config: WebsiteConfig; onUnlock: (
 export function EventWebsitePublic() {
   const { currentEvent } = useEvent();
   const { eventSlug } = useParams<{ eventSlug: string }>();
+  const location = useLocation();
   const [searchParams] = useSearchParams();
   const isPreviewMode = searchParams.get('preview') === '1';
+  const trackedViewsRef = useRef<Set<string>>(new Set());
 
   const [config, setConfig] = useState<WebsiteConfig>(() => ({
     ...DEFAULT_WEBSITE_CONFIG,
@@ -163,6 +165,7 @@ export function EventWebsitePublic() {
   }));
   const [selectedSection, setSelectedSection] = useState<SectionId | null>(null);
   const [activeBreakpoint, setActiveBreakpoint] = useState<PreviewBreakpoint>('desktop');
+  const [isConfigLoading, setIsConfigLoading] = useState(true);
   const [passwordUnlocked, setPasswordUnlocked] = useState(() => {
     try { return sessionStorage.getItem('munar_pw_unlocked') === '1'; } catch { return false; }
   });
@@ -174,35 +177,59 @@ export function EventWebsitePublic() {
   useEffect(() => {
     if (!currentEvent) return;
 
-    if (isPreviewMode) {
-      websiteService.loadConfig(currentEvent.id).then(setConfig);
-      return;
-    }
+    let isCancelled = false;
+    setIsConfigLoading(true);
 
-    if (eventSlug) {
-      Promise.all([
-        websiteService.loadPublishedWebsite(eventSlug).catch(() => null),
-        websiteService.loadPublishedPage(eventSlug, 'home').catch(() => null),
-      ]).then(([overview, page]) => {
-        if (overview || page) {
-          setConfig((prev) => ({
-            ...prev,
-            ...(overview?.websiteSettings as Partial<WebsiteConfig> | undefined),
-            sections: extractSections(page?.page.sectionsJson) || prev.sections,
-            seo: {
-              ...prev.seo,
-              ...(page?.page.seoJson as Record<string, string> | undefined),
-            },
-          }));
+    const loadWebsiteConfig = async () => {
+      try {
+        if (isPreviewMode) {
+          const nextConfig = await websiteService.loadConfig(currentEvent.id);
+          if (!isCancelled) {
+            setConfig(nextConfig);
+          }
           return;
         }
 
-        websiteService.loadConfig(currentEvent.id).then(setConfig);
-      });
-      return;
-    }
+        if (eventSlug) {
+          const [overview, page] = await Promise.all([
+            websiteService.loadPublishedWebsite(eventSlug).catch(() => null),
+            websiteService.loadPublishedPage(eventSlug, 'home').catch(() => null),
+          ]);
 
-    websiteService.loadConfig(currentEvent.id).then(setConfig);
+          if (overview || page) {
+            const nextConfig: WebsiteConfig = {
+              ...DEFAULT_WEBSITE_CONFIG,
+              ...((overview?.websiteSettings as Partial<WebsiteConfig> | undefined) ?? {}),
+              sections: extractSections(page?.page.sectionsJson) || [...DEFAULT_SECTIONS],
+              seo: {
+                ...DEFAULT_WEBSITE_CONFIG.seo,
+                ...((page?.page.seoJson as Record<string, string> | undefined) ?? {}),
+              },
+            };
+
+            if (!isCancelled) {
+              setConfig(nextConfig);
+            }
+            return;
+          }
+        }
+
+        const nextConfig = await websiteService.loadConfig(currentEvent.id);
+        if (!isCancelled) {
+          setConfig(nextConfig);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsConfigLoading(false);
+        }
+      }
+    };
+
+    loadWebsiteConfig();
+
+    return () => {
+      isCancelled = true;
+    };
   }, [currentEvent?.id, eventSlug, isPreviewMode]);
 
   // Load speakers, sessions, sponsors when event is available
@@ -244,6 +271,32 @@ export function EventWebsitePublic() {
 
     return () => window.removeEventListener('message', handleMessage);
   }, [isPreviewMode]);
+
+  useEffect(() => {
+    if (!eventSlug || isPreviewMode || isConfigLoading) return;
+    if (config.accessControl === 'private') return;
+    if (config.accessControl === 'password' && !passwordUnlocked) return;
+
+    const pageKey = 'home';
+    const trackingKey = `${eventSlug}:${pageKey}:${location.pathname}`;
+
+    if (trackedViewsRef.current.has(trackingKey)) {
+      return;
+    }
+
+    trackedViewsRef.current.add(trackingKey);
+
+    void websiteService.trackPublishedWebsiteView(eventSlug, pageKey, location.pathname).catch(() => {
+      trackedViewsRef.current.delete(trackingKey);
+    });
+  }, [
+    config.accessControl,
+    eventSlug,
+    isConfigLoading,
+    isPreviewMode,
+    location.pathname,
+    passwordUnlocked,
+  ]);
 
   // Handler: section clicked inside the template → notify builder
   const handleSectionClick = (id: SectionId) => {
@@ -310,6 +363,17 @@ export function EventWebsitePublic() {
   };
 
   if (!currentEvent) return null;
+
+  if (isConfigLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 dark:bg-slate-950 font-['Raleway']">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-slate-300 dark:border-slate-700 border-t-slate-600 dark:border-t-slate-300 rounded-full animate-spin" />
+          <p className="text-sm text-slate-500 dark:text-slate-400">Loading event website...</p>
+        </div>
+      </div>
+    );
+  }
 
   // ── Access Control (bypass in preview mode) ─────────────────────────────
   if (!isPreviewMode) {

@@ -834,9 +834,12 @@ export function MerchPublic() {
         sum + getUnitPriceMinor(line.product, line.variant) * line.quantity,
       0,
     );
+    const vatMinor = Math.round(subtotalMinor * 0.075);
     return {
       itemCount: cart.reduce((sum, line) => sum + line.quantity, 0),
       subtotalMinor,
+      vatMinor,
+      totalMinor: subtotalMinor + vatMinor,
     };
   }, [cart]);
 
@@ -1143,6 +1146,7 @@ export function MerchPublic() {
                 {[
                   `Status: ${currentOrder.status}`,
                   `Fulfillment: ${currentOrder.fulfillmentStatus}`,
+                  `VAT: ${formatMoney(currentOrder.vatMinor ?? 0, currentOrder.currency || currency)}`,
                   `Total: ${formatMoney(currentOrder.totalMinor, currentOrder.currency || currency)}`,
                 ].map((label) => (
                   <span
@@ -1277,121 +1281,127 @@ export function MerchPublic() {
                       </div>
 
                       <div style={styles.productBody}>
-                        <div style={styles.badgeRow}>
-                          {category && (
-                            <span style={styles.badge("slate")}>
-                              {category}
-                            </span>
-                          )}
-                          <span style={styles.badge("indigo")}>
-                            {product.productType === "DIGITAL"
-                              ? "Digital"
-                              : "Physical"}
-                          </span>
-                        </div>
-
-                        <div>
-                          <h2 style={styles.productName}>{product.name}</h2>
-                          <p style={styles.productPrice}>
-                            {formatMoney(
-                              displayPrice,
-                              product.currency || currency,
+                        <div style={styles.productContent}>
+                          <div style={styles.badgeRow}>
+                            {category && (
+                              <span style={styles.badge("slate")}>
+                                {category}
+                              </span>
                             )}
-                          </p>
-                        </div>
-
-                        <p style={styles.productDesc}>
-                          {product.description || "No description available."}
-                        </p>
-
-                        {requiresVariant && (
-                          <div>
-                            <span style={styles.variantLabel}>
-                              Choose an option
+                            <span style={styles.badge("indigo")}>
+                              {product.productType === "DIGITAL"
+                                ? "Digital"
+                                : "Physical"}
                             </span>
-                            <select
-                              value={selectedVariants[product.id] ?? ""}
-                              onChange={(e) =>
-                                setSelectedVariants((prev) => ({
-                                  ...prev,
-                                  [product.id]: e.target.value,
-                                }))
-                              }
-                              style={styles.variantSelect}
-                              className="merch-input"
-                            >
-                              <option value="">Select an option</option>
-                              {product.variants.map((variant) => {
-                                const variantOOS =
-                                  variant.inventoryCount !== null &&
-                                  variant.inventoryCount <= 0;
-                                return (
-                                  <option
-                                    key={variant.id}
-                                    value={variant.id}
-                                    disabled={variantOOS}
-                                  >
-                                    {variant.name}
-                                    {variantOOS ? " — Out of stock" : ""}
-                                  </option>
-                                );
-                              })}
-                            </select>
                           </div>
-                        )}
 
-                        <div style={styles.inventoryRow}>
                           <div>
-                            <p style={styles.inventoryLabel}>Available</p>
-                            <p style={styles.inventoryValue}>
-                              {availableInventory === null
-                                ? "∞ In stock"
-                                : `${availableInventory} left`}
+                            <h2 style={styles.productName}>{product.name}</h2>
+                            <p style={styles.productPrice}>
+                              {formatMoney(
+                                displayPrice,
+                                product.currency || currency,
+                              )}
                             </p>
                           </div>
-                          <div style={styles.qtyControls}>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateDraftQuantity(
-                                  product.id,
-                                  draftQuantity - 1,
-                                )
-                              }
-                              style={styles.qtyBtn}
-                              className="merch-qty-btn"
-                            >
-                              <Minus size={13} />
-                            </button>
-                            <span style={styles.qtyValue}>{draftQuantity}</span>
-                            <button
-                              type="button"
-                              onClick={() =>
-                                updateDraftQuantity(
-                                  product.id,
-                                  draftQuantity + 1,
-                                )
-                              }
-                              style={styles.qtyBtn}
-                              className="merch-qty-btn"
-                            >
-                              <Plus size={13} />
-                            </button>
-                          </div>
+
+                          <p style={styles.productDesc}>
+                            {product.description || "No description available."}
+                          </p>
+
+                          {requiresVariant && (
+                            <div>
+                              <span style={styles.variantLabel}>
+                                Choose an option
+                              </span>
+                              <select
+                                value={selectedVariants[product.id] ?? ""}
+                                onChange={(e) =>
+                                  setSelectedVariants((prev) => ({
+                                    ...prev,
+                                    [product.id]: e.target.value,
+                                  }))
+                                }
+                                style={styles.variantSelect}
+                                className="merch-input"
+                              >
+                                <option value="">Select an option</option>
+                                {product.variants.map((variant) => {
+                                  const variantOOS =
+                                    variant.inventoryCount !== null &&
+                                    variant.inventoryCount <= 0;
+                                  return (
+                                    <option
+                                      key={variant.id}
+                                      value={variant.id}
+                                      disabled={variantOOS}
+                                    >
+                                      {variant.name}
+                                      {variantOOS ? " — Out of stock" : ""}
+                                    </option>
+                                  );
+                                })}
+                              </select>
+                            </div>
+                          )}
                         </div>
 
-                        <button
-                          type="button"
-                          onClick={() => addToCart(product)}
-                          disabled={soldOut}
-                          style={{
-                            ...styles.addToCartBtn,
-                            ...(soldOut ? styles.addToCartBtnDisabled : {}),
-                          }}
-                          className="merch-add-btn"
-                        >
-                          {soldOut ? "Out of stock" : "Add to cart"}
-                        </button>
+                        <div style={styles.productActions}>
+                          <div style={styles.inventoryRow}>
+                            <div>
+                              <p style={styles.inventoryLabel}>Available</p>
+                              <p style={styles.inventoryValue}>
+                                {availableInventory === null
+                                  ? "∞ In stock"
+                                  : `${availableInventory} left`}
+                              </p>
+                            </div>
+                            <div style={styles.qtyControls}>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateDraftQuantity(
+                                    product.id,
+                                    draftQuantity - 1,
+                                  )
+                                }
+                                style={styles.qtyBtn}
+                                className="merch-qty-btn"
+                              >
+                                <Minus size={13} />
+                              </button>
+                              <span style={styles.qtyValue}>
+                                {draftQuantity}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  updateDraftQuantity(
+                                    product.id,
+                                    draftQuantity + 1,
+                                  )
+                                }
+                                style={styles.qtyBtn}
+                                className="merch-qty-btn"
+                              >
+                                <Plus size={13} />
+                              </button>
+                            </div>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => addToCart(product)}
+                            disabled={soldOut}
+                            style={{
+                              ...styles.addToCartBtn,
+                              ...(soldOut ? styles.addToCartBtnDisabled : {}),
+                            }}
+                            className="merch-add-btn"
+                          >
+                            {soldOut ? "Out of stock" : "Add to cart"}
+                          </button>
+                        </div>
                       </div>
                     </article>
                   );
@@ -1509,6 +1519,7 @@ export function MerchPublic() {
                   <div style={{ marginTop: 16 }}>
                     {[
                       ["Subtotal", formatMoney(totals.subtotalMinor, currency)],
+                      ["VAT (7.5%)", formatMoney(totals.vatMinor, currency)],
                       ["Fees", formatMoney(0, currency)],
                       ["Shipping", formatMoney(0, currency)],
                     ].map(([label, val]) => (
@@ -1520,7 +1531,7 @@ export function MerchPublic() {
                     <div style={styles.summaryTotal}>
                       <span style={styles.summaryTotalLabel}>Total</span>
                       <span style={styles.summaryTotalValue}>
-                        {formatMoney(totals.subtotalMinor, currency)}
+                        {formatMoney(totals.totalMinor, currency)}
                       </span>
                     </div>
                   </div>
@@ -1667,7 +1678,7 @@ export function MerchPublic() {
                       <Loader2 size={16} className="animate-spin" /> Processing…
                     </>
                   ) : totals.subtotalMinor > 0 ? (
-                    `Continue to payment · ${formatMoney(totals.subtotalMinor, currency)}`
+                    `Continue to payment · ${formatMoney(totals.totalMinor, currency)}`
                   ) : (
                     "Place order"
                   )}

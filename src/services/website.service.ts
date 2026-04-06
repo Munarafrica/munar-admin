@@ -3,6 +3,7 @@ import { apiClient } from '../lib/api-client';
 import {
   BackendEventResponse,
   CreateWebsitePageRequest,
+  PublicWebsiteViewRequest,
   PublishedWebsiteOverviewResponse,
   PublishedWebsitePageResponse,
   UpdateEventSettingsRequest,
@@ -11,9 +12,39 @@ import {
 import { DEFAULT_SECTIONS, DEFAULT_WEBSITE_CONFIG, WebsiteConfig } from '../modules/website/types';
 
 const STORAGE_KEY_PREFIX = 'munar_website_config_';
+const PUBLIC_SESSION_STORAGE_KEY = 'munar_public_session_id';
 
 function getStorageKey(eventId: string): string {
   return `${STORAGE_KEY_PREFIX}${eventId}`;
+}
+
+function createPublicSessionId(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `sess_${crypto.randomUUID().replace(/-/g, '')}`;
+  }
+
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return `sess_${Array.from(bytes, (value) => value.toString(16).padStart(2, '0')).join('')}`;
+  }
+
+  return `sess_${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
+}
+
+export function getPublicSessionId(): string {
+  try {
+    const existing = window.localStorage.getItem(PUBLIC_SESSION_STORAGE_KEY);
+    if (existing) {
+      return existing;
+    }
+
+    const created = createPublicSessionId();
+    window.localStorage.setItem(PUBLIC_SESSION_STORAGE_KEY, created);
+    return created;
+  } catch {
+    return createPublicSessionId();
+  }
 }
 
 function ensureDefaults(config: WebsiteConfig): WebsiteConfig {
@@ -233,6 +264,30 @@ class WebsiteService {
 
   async loadPublishedPage(eventSlug: string, pageKey = 'home'): Promise<PublishedWebsitePageResponse> {
     return apiClient.get<PublishedWebsitePageResponse>(`/public/events/${eventSlug}/pages/${pageKey}`);
+  }
+
+  async trackPublishedWebsiteView(eventSlug: string, pageKey: string, path: string): Promise<void> {
+    if (config.features.useMockData) {
+      return;
+    }
+
+    const payload: PublicWebsiteViewRequest = {
+      pageKey,
+      sessionId: getPublicSessionId(),
+      path,
+    };
+
+    const response = await fetch(`${config.api.baseUrl}/public/events/${eventSlug}/website/view`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to track website view for ${eventSlug}:${pageKey}`);
+    }
   }
 }
 

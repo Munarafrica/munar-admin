@@ -227,13 +227,20 @@ export interface UpdateTicketRequest extends Partial<CreateTicketRequest> {}
 // Checkout question types
 export interface TicketQuestion {
   id: string;
-  eventId: string;
+  eventId?: string;
   label: string;
   type: 'text' | 'dropdown' | 'checkbox';
   required: boolean;
+  description?: string;
+  placeholder?: string;
   ticketIds: string[];
+  ticketTypeIds?: string[];
+  appliesToAll?: boolean;
   options?: string[];
+  configJson?: Record<string, unknown>;
   sortOrder: number;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CreateQuestionRequest {
@@ -242,6 +249,8 @@ export interface CreateQuestionRequest {
   required: boolean;
   ticketIds: string[];
   options?: string[];
+  description?: string;
+  placeholder?: string;
   sortOrder?: number;
 }
 
@@ -320,6 +329,7 @@ export interface PublicTicket {
   maxPerOrder: number;
   perks?: Array<{ id: string; name: string }>;
   requireAttendeeInfo: boolean;
+  checkoutQuestions?: TicketQuestion[];
 }
 
 export interface PublicTicketsResponse {
@@ -335,9 +345,43 @@ export interface PublicTicketsResponse {
     coverImageUrl?: string;
     venueLocation?: string;
     currency: string;
+    summary?: string;
   };
   tickets: PublicTicket[];
   questions: TicketQuestion[];
+}
+
+export interface PublicTicketTypesEndpointResponse {
+  event: {
+    id: string;
+    slug: string;
+    title?: string;
+    name?: string;
+    summary?: string | null;
+    currency?: string;
+    startsAt?: string | null;
+    endsAt?: string | null;
+    venueName?: string | null;
+    venueAddress?: string | null;
+    isOnline?: boolean;
+  };
+  ticketTypes: Array<{
+    id: string;
+    name: string;
+    description?: string | null;
+    status?: string;
+    ticketKind?: 'SINGLE' | 'GROUP';
+    groupSize?: number | null;
+    attendeesPerUnit?: number | null;
+    priceMinor?: number;
+    capacity?: number | null;
+    soldCount?: number;
+    minPerOrder?: number | null;
+    maxPerOrder?: number | null;
+    accessRulesJson?: Record<string, unknown> | null;
+    checkoutQuestions?: TicketQuestion[];
+  }>;
+  ticketQuestions?: TicketQuestion[];
 }
 
 // File upload
@@ -541,6 +585,7 @@ export interface TicketOrderResponse {
   email: string | null;
   currency: CurrencyCode;
   subtotalMinor: number;
+  vatMinor: number;
   feeMinor: number;
   totalMinor: number;
   reservationExpiresAt: string | null;
@@ -591,6 +636,14 @@ export interface BackendFormResponse {
   scheduleJson: Record<string, unknown> | null;
   accessControlJson: Record<string, unknown> | null;
   brandingJson: Record<string, unknown> | null;
+  responseCount?: number;
+  responsesCount?: number;
+  submissionCount?: number;
+  submissionsCount?: number;
+  totalSubmissions?: number;
+  stats?: {
+    totalSubmissions?: number;
+  } | null;
   publishedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -785,4 +838,10 @@ export interface PublishedWebsitePageResponse {
     sectionsJson: Record<string, unknown>;
     seoJson: Record<string, unknown> | null;
   };
+}
+
+export interface PublicWebsiteViewRequest {
+  pageKey: string;
+  sessionId: string;
+  path: string;
 }

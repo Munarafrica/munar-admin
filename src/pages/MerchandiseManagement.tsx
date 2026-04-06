@@ -11,7 +11,7 @@ import { Input } from '../components/ui/input';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { MerchandiseProvider, useMerchandise } from '../contexts';
 import { useOrders, useProducts } from '../hooks';
-import { getCurrentEventId } from '../lib/event-storage';
+import { useEventId } from '../lib/navigation';
 import { Page } from '../App';
 import type { FulfillmentStatus, Order, Product } from '../types/merchandise';
 import { merchandiseService } from '../services';
@@ -38,7 +38,7 @@ const formatMoney = (amountMinor: number, currency: string) =>
   }).format(amountMinor / 100);
 
 const MerchandiseManagementContent: React.FC<MerchandiseManagementProps> = ({ onNavigate }) => {
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
   const [activeTab, setActiveTab] = useState('products');
   const [productSearch, setProductSearch] = useState('');
   const [orderSearch, setOrderSearch] = useState('');
@@ -380,7 +380,7 @@ const MerchandiseManagementContent: React.FC<MerchandiseManagementProps> = ({ on
 };
 
 export const MerchandiseManagement: React.FC<MerchandiseManagementProps> = (props) => {
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
 
   return (
     <MerchandiseProvider eventId={eventId}>

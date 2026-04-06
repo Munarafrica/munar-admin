@@ -17,14 +17,14 @@ import { AlertsPrivacyTab } from '../components/event-dashboard/analytics/Alerts
 import { ComparisonTab } from '../components/event-dashboard/analytics/ComparisonTab';
 import { cn } from '../components/ui/utils';
 import { Button } from '../components/ui/button';
-import { getCurrentEventId } from '../lib/event-storage';
+import { useEventId } from '../lib/navigation';
 
 interface EventAnalyticsProps {
   onNavigate: (page: Page) => void;
 }
 
 export const EventAnalytics: React.FC<EventAnalyticsProps> = ({ onNavigate }) => {
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
   const [activeTab, setActiveTab] = useState('overview');
   const { analytics, isLoading, error, filters, setFilters, exportReport, scheduleReport } = useEventAnalytics({
     eventId,

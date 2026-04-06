@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { eventsService } from '../services';
-import { getCurrentEventId } from '../lib/event-storage';
+import { useEventId } from '../lib/navigation';
 
 interface GalleryAdminProps {
   onNavigate?: (page: Page) => void;
@@ -86,7 +86,7 @@ const MOCK_MEDIA: MediaItem[] = [
 
 export const GalleryAdmin: React.FC<GalleryAdminProps> = ({ onNavigate }) => {
   const [mediaItems, setMediaItems] = useState<MediaItem[]>(MOCK_MEDIA);
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
   const updateGalleryCount = (count: number, message?: string) => {
     eventsService.updateModuleCount(eventId, 'Event Media & Gallery', count, message, 'image');
   };

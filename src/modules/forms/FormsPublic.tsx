@@ -5,6 +5,7 @@ import { FileText, ArrowLeft, Clock, CheckCircle, Loader2 } from 'lucide-react';
 import { Link, useParams } from 'react-router-dom';
 import { formsService } from '../../services';
 import { Form } from '../../components/event-dashboard/types';
+import { ApiException } from '../../types/api';
 
 export function FormsPublic() {
   const { currentEvent } = useEvent();
@@ -32,8 +33,7 @@ export function FormsPublic() {
       .catch(async (err) => {
         if (isAuthenticated && currentEvent?.id) {
           try {
-            const adminForms = await formsService.getForms(currentEvent.id);
-            setForms(adminForms.filter((form) => form.status === 'published'));
+            setForms((await formsService.getForms(currentEvent.id)).filter((form) => form.status === 'published'));
             setEventName(currentEvent?.name || 'Event forms');
             setError(null);
             return;
@@ -43,7 +43,13 @@ export function FormsPublic() {
         }
 
         setForms([]);
-        setError(err instanceof Error ? err.message : 'Unable to load forms.');
+        if (err instanceof ApiException && err.statusCode === 404) {
+          setError('No public forms are currently available for this event. This can happen if the forms module is disabled, the event slug is incorrect, or no forms have been published yet.');
+          return;
+        }
+
+        const message = err instanceof Error ? err.message.trim() : '';
+        setError(message || 'Unable to load forms.');
       })
       .finally(() => setIsLoading(false));
   }, [currentEvent?.id, currentEvent?.name, isAuthenticated, slug]);
@@ -54,13 +60,13 @@ export function FormsPublic() {
         <div className="max-w-3xl mx-auto px-4 py-6">
           <Link
             to={`/e/${slug}`}
-            className="inline-flex items-center gap-1.5 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mb-4"
+            className="inline-flex items-center gap-1.5 mt-6 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 mb-4"
           >
             <ArrowLeft className="w-4 h-4" />
             Back to event
           </Link>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 mb-8">
             <div className="w-10 h-10 rounded-xl bg-pink-100 dark:bg-pink-900/30 flex items-center justify-center">
               <FileText className="w-5 h-5 text-pink-600 dark:text-pink-400" />
             </div>
@@ -80,8 +86,13 @@ export function FormsPublic() {
         )}
 
         {!isLoading && error && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-200">
-            {error}
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-5 py-4 dark:border-red-900/60 dark:bg-red-950/30">
+            <h3 className="text-sm font-semibold text-red-800 dark:text-red-200 mb-1">
+              Unable to load public forms
+            </h3>
+            <p className="text-sm text-red-700 dark:text-red-300">
+              {error}
+            </p>
           </div>
         )}
 
@@ -108,7 +119,7 @@ export function FormsPublic() {
                 <div className="flex items-start justify-between mb-2 gap-4">
                   <div>
                     <h3 className="font-semibold text-slate-900 dark:text-slate-100 mb-1 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                      {form.title}
+                      {form.title || 'Untitled Form'}
                     </h3>
                     {form.description && (
                       <p className="text-sm text-slate-500 dark:text-slate-400">{form.description}</p>

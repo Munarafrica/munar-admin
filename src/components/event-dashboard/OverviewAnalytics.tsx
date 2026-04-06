@@ -17,14 +17,14 @@ export const OverviewAnalytics: React.FC<OverviewAnalyticsProps> = ({ metrics, o
     ? metrics.map((m) => ({
         label: m.label,
         value: String(m.value ?? '0'),
-        highlight: m.label === 'Total Revenue',
+        highlight: m.label === 'Total Revenue' || m.label === 'Gross Revenue',
         isText: typeof m.value === 'string' && isNaN(Number(String(m.value).replace(/[^0-9.]/g, ''))),
       }))
     : [
         { label: 'Tickets Sold/registrations', value: '–', highlight: false },
         { label: 'Website Views', value: '–', highlight: false },
         { label: 'Voting Activity', value: 'Not Configured', highlight: false, isText: true },
-        { label: 'Total Revenue', value: '₦0', highlight: true },
+        { label: 'Gross Revenue', value: '₦0.00', highlight: true },
         { label: 'Check-ins', value: '0', highlight: false },
         { label: 'Survey Responses', value: '0', highlight: false },
       ];

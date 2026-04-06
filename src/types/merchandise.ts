@@ -113,6 +113,7 @@ export interface MerchOrder {
   paymentReference?: string | null;
   currency: string;
   subtotalMinor: number;
+  vatMinor: number;
   feeMinor: number;
   shippingMinor: number;
   totalMinor: number;

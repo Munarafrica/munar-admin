@@ -3,7 +3,7 @@ import { BarChart3, Wallet } from 'lucide-react';
 import { Bar, CartesianGrid, Tooltip, XAxis, YAxis, ResponsiveContainer, BarChart } from 'recharts';
 import { EventAnalytics } from '../../../types/analytics';
 import { SectionCard } from './SectionCard';
-import { getCurrentEventId } from '../../../lib/event-storage';
+import { useEventId } from '../../../lib/navigation';
 import { useFinance } from '../../../hooks';
 
 interface FinancialTabProps {
@@ -15,7 +15,7 @@ const formatCurrency = (value: number, currency: string) =>
   new Intl.NumberFormat('en-NG', { style: 'currency', currency, maximumFractionDigits: 0 }).format(value);
 
 export const FinancialTab: React.FC<FinancialTabProps> = ({ analytics, currency }) => {
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
   const { primaryBucket, primaryCurrency, transactions } = useFinance(eventId);
 
   return (

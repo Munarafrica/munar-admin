@@ -26,6 +26,8 @@ export const TicketQuestionsTab: React.FC<TicketQuestionsTabProps> = ({ tickets,
 
   const [isAdding, setIsAdding] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [questionPendingDelete, setQuestionPendingDelete] = useState<Question | null>(null);
+  const [isDeletingQuestion, setIsDeletingQuestion] = useState(false);
   
   // Form State
   const [formData, setFormData] = useState<Partial<Question>>({
@@ -53,14 +55,18 @@ export const TicketQuestionsTab: React.FC<TicketQuestionsTabProps> = ({ tickets,
     setIsAdding(true);
   };
 
-  const handleDelete = async (id: string) => {
-    if(!window.confirm("Delete this question?")) return;
+  const handleDelete = async () => {
+    if (!questionPendingDelete) return;
+    setIsDeletingQuestion(true);
     try {
-      await ticketsService.deleteQuestion(eventId, id);
-      setQuestions(questions.filter(q => q.id !== id));
+      await ticketsService.deleteQuestion(eventId, questionPendingDelete.id);
+      setQuestions(questions.filter(q => q.id !== questionPendingDelete.id));
+      setQuestionPendingDelete(null);
       toast.success('Question deleted');
     } catch {
       toast.error('Failed to delete question');
+    } finally {
+      setIsDeletingQuestion(false);
     }
   };
 
@@ -107,6 +113,22 @@ export const TicketQuestionsTab: React.FC<TicketQuestionsTabProps> = ({ tickets,
 
   const removeOption = (index: number) => {
       setFormData(prev => ({ ...prev, options: (prev.options || []).filter((_, i) => i !== index) }));
+  };
+
+  const appliesToAllTickets = !formData.ticketIds || formData.ticketIds.includes('all');
+
+  const toggleTicketTarget = (ticketId: string) => {
+      setFormData(prev => {
+          const current = prev.ticketIds?.includes('all') ? [] : (prev.ticketIds || []);
+          const nextTicketIds = current.includes(ticketId)
+              ? current.filter(id => id !== ticketId)
+              : [...current, ticketId];
+
+          return {
+              ...prev,
+              ticketIds: nextTicketIds.length > 0 ? nextTicketIds : ['all'],
+          };
+      });
   };
 
   return (
@@ -185,6 +207,46 @@ export const TicketQuestionsTab: React.FC<TicketQuestionsTabProps> = ({ tickets,
                         </div>
                    </div>
 
+                   <div className="space-y-3">
+                       <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Applies To</label>
+                       <label className="flex items-center justify-between p-3 border border-slate-200 dark:border-slate-800 rounded-lg cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                           <div>
+                               <p className="text-sm text-slate-700 dark:text-slate-300">All ticket types</p>
+                               <p className="text-xs text-slate-500 dark:text-slate-400">Show this question for every ticket during checkout.</p>
+                           </div>
+                           <input
+                               type="checkbox"
+                               checked={appliesToAllTickets}
+                               onChange={(e) => setFormData(prev => ({ ...prev, ticketIds: e.target.checked ? ['all'] : [] }))}
+                               className="accent-indigo-600 w-4 h-4"
+                           />
+                       </label>
+
+                       {!appliesToAllTickets && (
+                           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                               {tickets.map((ticket) => {
+                                   const isSelected = (formData.ticketIds || []).includes(ticket.id);
+                                   return (
+                                       <button
+                                           key={ticket.id}
+                                           type="button"
+                                           onClick={() => toggleTicketTarget(ticket.id)}
+                                           className={cn(
+                                               "rounded-lg border px-3 py-3 text-left transition-colors",
+                                               isSelected
+                                                   ? "border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300"
+                                                   : "border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                           )}
+                                       >
+                                           <p className="text-sm font-medium">{ticket.name}</p>
+                                           <p className="text-xs opacity-80 mt-1">{ticket.type} ticket</p>
+                                       </button>
+                                   );
+                               })}
+                           </div>
+                       )}
+                   </div>
+
                    {/* Options for Dropdown/Checkbox */}
                    {(formData.type === 'dropdown' || formData.type === 'checkbox') && (
                        <div className="space-y-2 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
@@ -255,13 +317,50 @@ export const TicketQuestionsTab: React.FC<TicketQuestionsTabProps> = ({ tickets,
                                 <Button size="sm" variant="ghost" className="h-8 w-8 p-0" onClick={() => handleEdit(q)}>
                                     <Edit2 className="w-4 h-4 text-slate-500" />
                                 </Button>
-                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:text-red-600" onClick={() => handleDelete(q.id)}>
+                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 hover:text-red-600" onClick={() => setQuestionPendingDelete(q)}>
                                     <Trash2 className="w-4 h-4" />
                                 </Button>
                             </div>
                        </div>
                    ))
                )}
+           </div>
+       )}
+
+       {questionPendingDelete && (
+           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+               <div
+                   className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                   onClick={() => {
+                       if (!isDeletingQuestion) {
+                           setQuestionPendingDelete(null);
+                       }
+                   }}
+               />
+               <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+                   <div className="border-b border-slate-100 px-6 py-8 dark:border-slate-800">
+                       <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Delete Question?</h3>
+                       <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                           This will permanently delete "{questionPendingDelete.label}" from the checkout form.
+                       </p>
+                   </div>
+                   <div className="flex items-center justify-end gap-3 px-6 py-4">
+                       <Button
+                           variant="outline"
+                           onClick={() => setQuestionPendingDelete(null)}
+                           disabled={isDeletingQuestion}
+                       >
+                           Cancel
+                       </Button>
+                       <Button
+                           variant="destructive"
+                           onClick={() => void handleDelete()}
+                           disabled={isDeletingQuestion}
+                       >
+                           {isDeletingQuestion ? 'Deleting...' : 'Delete Question'}
+                       </Button>
+                   </div>
+               </div>
            </div>
        )}
     </div>

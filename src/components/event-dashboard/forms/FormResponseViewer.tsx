@@ -17,7 +17,7 @@ import { Button } from "../../ui/button";
 import { Badge } from "../../ui/badge";
 import { cn } from "../../ui/utils";
 import { formsService } from "../../../services";
-import { getCurrentEventId } from "../../../lib/event-storage";
+import { useEventId } from "../../../lib/navigation";
 import { useAuth } from "../../../contexts";
 import { toast } from "sonner";
 
@@ -30,7 +30,7 @@ export const FormResponseViewer: React.FC<FormResponseViewerProps> = ({
   form,
   onCancel,
 }) => {
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
   const { currentTenant, memberships } = useAuth();
   const [filterStatus, setFilterStatus] = useState<
     "all" | "completed" | "partial"

@@ -11,6 +11,10 @@ It covers:
 - backend rules the frontend must respect
 - important backend gaps the frontend should know before building
 
+Related pricing handoff:
+
+- see `purchase_vat_frontend_handoff.md` for the VAT contract update on orders
+
 ## Feature Summary
 
 The merch feature is event-scoped.
@@ -398,9 +402,10 @@ These are the important model shapes the frontend should expect from the current
   "paymentReference": "mnr_mch_52a92907f599_1774145632965",
   "currency": "NGN",
   "subtotalMinor": 300000,
+  "vatMinor": 22500,
   "feeMinor": 0,
   "shippingMinor": 0,
-  "totalMinor": 300000,
+  "totalMinor": 322500,
   "shippingAddressJson": {
     "fullName": "Jane Doe",
     "phone": "+2348000000000",
@@ -748,8 +753,10 @@ Important backend rules:
 Pricing and status rules:
 
 - variant price overrides base product price
+- `vatMinor = Math.round(subtotalMinor * 0.075)`
 - `shippingMinor = 0`
 - `feeMinor = 0`
+- `totalMinor` already includes VAT
 - if `totalMinor > 0`, order starts as `PENDING`
 - if `totalMinor === 0`, order is auto-confirmed as paid
 
@@ -1208,6 +1215,7 @@ export interface MerchOrder {
   paymentReference: string | null;
   currency: string;
   subtotalMinor: number;
+  vatMinor: number;
   feeMinor: number;
   shippingMinor: number;
   totalMinor: number;

@@ -10,7 +10,7 @@ import { AttendeeDetailModal } from "../components/event-dashboard/AttendeeDetai
 import { Plus, Users, QrCode, MessageSquare, Settings, Search, Filter, MoreVertical, AlertCircle, Copy, Trash2, Edit, Ticket, ExternalLink, Link as LinkIcon, BarChart3, CreditCard, ChevronLeft, Loader2 } from 'lucide-react';
 import { cn } from "../components/ui/utils";
 import { eventsService, ticketsService } from "../services";
-import { getCurrentEventId } from "../lib/event-storage";
+import { useEventId } from "../lib/navigation";
 import { toast } from 'sonner';
 import { useTickets } from "../hooks";
 
@@ -27,7 +27,7 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
   const [orderedTickets, setOrderedTickets] = useState<TicketType[]>([]);
   const [draggedTicketId, setDraggedTicketId] = useState<string | null>(null);
   const [selectedAttendee, setSelectedAttendee] = useState<Attendee | null>(null);
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
   const [eventSlug, setEventSlug] = useState<string>('');
   const [eventName, setEventName] = useState<string>('');
 

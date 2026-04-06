@@ -162,6 +162,7 @@ function normalizeBackendOrder(order: Order): Order {
     buyerEmail: order.buyerEmail ?? order.displayEmail ?? null,
     paymentStatus: order.paymentStatus ?? null,
     paymentReference: order.paymentReference ?? null,
+    vatMinor: order.vatMinor ?? 0,
     metadataJson: order.metadataJson ?? null,
     shippingAddressJson: order.shippingAddressJson ?? null,
     items: (order.items ?? []).map((item) => ({
@@ -247,6 +248,7 @@ function normalizeOrder(order: LegacyOrder): Order {
           : 'UNFULFILLED',
     currency: order.currency,
     subtotalMinor: order.subtotal,
+    vatMinor: 0,
     feeMinor: 0,
     shippingMinor: order.shippingCost,
     totalMinor: order.total,

@@ -70,6 +70,7 @@ export function EventResolver({ children, useSlug }: EventResolverProps) {
  */
 function EventResolverInner({ children }: { children: React.ReactNode }) {
   const { currentEvent, isLoading, error } = useEvent();
+  const params = useParams<{ eventId?: string; eventSlug?: string }>();
 
   if (isLoading) {
     return (
@@ -87,7 +88,6 @@ function EventResolverInner({ children }: { children: React.ReactNode }) {
   if (error || !currentEvent) {
     // DEV: Show error message if available
     if (error) {
-      const params = useParams<{ eventId?: string; eventSlug?: string }>();
       return (
         <div className="min-h-screen flex flex-col items-center justify-center p-4">
           <div className="bg-red-50 text-red-600 p-4 rounded-lg max-w-lg mb-4">

@@ -189,6 +189,17 @@ export const styles: Record<string, React.CSSProperties> = {
     gap: 14,
     flex: 1,
   },
+  productContent: {
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 14,
+  },
+  productActions: {
+    marginTop: "auto",
+    display: "flex",
+    flexDirection: "column" as const,
+    gap: 14,
+  },
   badgeRow: {
     display: "flex",
     gap: 6,

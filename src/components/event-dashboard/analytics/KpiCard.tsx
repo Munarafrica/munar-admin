@@ -9,11 +9,12 @@ interface KpiCardProps {
 }
 
 const formatValue = (value: number, currency?: string) => {
-  if (currency && value >= 1000) {
+  if (currency) {
     return new Intl.NumberFormat('en-NG', {
       style: 'currency',
       currency,
-      maximumFractionDigits: 0,
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
     }).format(value);
   }
 

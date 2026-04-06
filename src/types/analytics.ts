@@ -24,12 +24,12 @@ export interface AnalyticsKpi {
 }
 
 export interface AnalyticsSummary {
+  registrations: AnalyticsKpi;
+  websiteViews: AnalyticsKpi;
   ticketsSold: AnalyticsKpi;
   totalRevenue: AnalyticsKpi;
-  totalCheckedIn: AnalyticsKpi;
-  revenuePerAttendee: AnalyticsKpi;
-  nps: AnalyticsKpi;
-  engagementScore: AnalyticsKpi;
+  checkIns: AnalyticsKpi;
+  surveyResponses: AnalyticsKpi;
 }
 
 export interface TicketSalesBreakdown {
@@ -253,6 +253,11 @@ export interface EventAnalytics {
   alertsPrivacy: AlertsPrivacyAnalytics;
   comparisons: ComparisonAnalytics;
   filters: AnalyticsFilterOptions;
+  definitions?: Record<string, string>;
+  source?: {
+    endpoint: string;
+    derivedEndpoints?: string[];
+  };
 }
 
 export interface ExportRequest {

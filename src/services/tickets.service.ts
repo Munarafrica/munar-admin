@@ -17,6 +17,7 @@ import {
   TicketOrderResponse,
   BackendTicketTypeResponse,
   PublicTicketsResponse,
+  PublicTicketTypesEndpointResponse,
   PublishedWebsiteOverviewResponse,
 } from '../types/api';
 import { TicketType, Attendee } from '../components/event-dashboard/types';
@@ -259,6 +260,78 @@ function normalizeAttendee(raw: any): Attendee {
   };
 }
 
+function normalizeQuestionType(type?: string): TicketQuestion['type'] {
+  switch (type?.toUpperCase()) {
+    case 'SELECT':
+    case 'DROPDOWN':
+      return 'dropdown';
+    case 'CHECKBOX':
+    case 'BOOLEAN':
+      return 'checkbox';
+    case 'TEXT':
+    default:
+      return 'text';
+  }
+}
+
+function normalizeTicketQuestion(raw: any, fallbackEventId?: string): TicketQuestion {
+  const ticketTypeIds = Array.isArray(raw?.ticketTypeIds)
+    ? raw.ticketTypeIds.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
+    : [];
+  const ticketIds = raw?.appliesToAll === true || ticketTypeIds.length === 0
+    ? ['all']
+    : ticketTypeIds;
+  const options = Array.isArray(raw?.options)
+    ? raw.options.filter((option: unknown): option is string => typeof option === 'string')
+    : [];
+
+  return {
+    id: typeof raw?.id === 'string' ? raw.id : generateId('q'),
+    eventId: typeof raw?.eventId === 'string' ? raw.eventId : fallbackEventId,
+    label: typeof raw?.label === 'string' ? raw.label : '',
+    type: normalizeQuestionType(typeof raw?.type === 'string' ? raw.type : undefined),
+    required: raw?.required === true,
+    description: typeof raw?.description === 'string' ? raw.description : undefined,
+    placeholder: typeof raw?.placeholder === 'string' ? raw.placeholder : undefined,
+    ticketIds,
+    ticketTypeIds,
+    appliesToAll: raw?.appliesToAll === true || ticketTypeIds.length === 0,
+    options,
+    configJson: raw?.configJson && typeof raw.configJson === 'object' ? raw.configJson : undefined,
+    sortOrder: typeof raw?.sortOrder === 'number' ? raw.sortOrder : 0,
+    createdAt: typeof raw?.createdAt === 'string' ? raw.createdAt : undefined,
+    updatedAt: typeof raw?.updatedAt === 'string' ? raw.updatedAt : undefined,
+  };
+}
+
+function unwrapQuestionListResponse(payload: ApiResponse<any[]> | any[]): any[] {
+  if (Array.isArray(payload)) {
+    return payload;
+  }
+
+  if (payload && Array.isArray(payload.data)) {
+    return payload.data;
+  }
+
+  return [];
+}
+
+function unwrapQuestionResponse(payload: ApiResponse<any> | any): any {
+  if (payload && typeof payload === 'object' && 'data' in payload) {
+    return (payload as ApiResponse<any>).data;
+  }
+
+  return payload;
+}
+
+function unwrapPayloadResponse<T>(payload: ApiResponse<T> | T): T {
+  if (payload && typeof payload === 'object' && 'data' in (payload as ApiResponse<T>)) {
+    return (payload as ApiResponse<T>).data;
+  }
+
+  return payload as T;
+}
+
 function buildPublicTicketsResponse(
   event: {
     id: string;
@@ -283,6 +356,7 @@ function buildPublicTicketsResponse(
       type: event.type || 'Physical',
       currency: event.currency || 'NGN',
       venueLocation: event.venueLocation,
+      summary: undefined,
     },
     tickets: tickets.map((ticket) => ({
       id: ticket.id,
@@ -299,6 +373,7 @@ function buildPublicTicketsResponse(
       maxPerOrder: ticket.maxPerOrder,
       perks: ticket.perks,
       requireAttendeeInfo: ticket.requireAttendeeInfo,
+      checkoutQuestions: [],
     })),
     questions: [],
   };
@@ -552,8 +627,8 @@ class TicketsService {
       await delay(300);
       return [];
     }
-    const response = await apiClient.get<ApiResponse<TicketQuestion[]>>(`/events/${eventId}/ticket-questions`);
-    return response.data;
+    const response = await apiClient.get<ApiResponse<any[]> | any[]>(`/events/${eventId}/ticket-questions`);
+    return unwrapQuestionListResponse(response).map((question) => normalizeTicketQuestion(question, eventId));
   }
 
   async createQuestion(eventId: string, data: CreateQuestionRequest): Promise<TicketQuestion> {
@@ -561,8 +636,19 @@ class TicketsService {
       await delay(400);
       return { id: generateId('q'), eventId, sortOrder: 0, ...data } as TicketQuestion;
     }
-    const response = await apiClient.post<ApiResponse<TicketQuestion>>(`/events/${eventId}/ticket-questions`, data);
-    return response.data;
+    const payload = {
+      label: data.label,
+      type: data.type === 'dropdown' ? 'SELECT' : data.type.toUpperCase(),
+      required: data.required,
+      options: data.options || [],
+      description: data.description,
+      placeholder: data.placeholder,
+      scope: {
+        ticketTypeIds: !data.ticketIds || data.ticketIds.length === 0 || data.ticketIds.includes('all') ? 'all' : data.ticketIds,
+      },
+    };
+    const response = await apiClient.post<ApiResponse<any> | any>(`/events/${eventId}/ticket-questions`, payload);
+    return normalizeTicketQuestion(unwrapQuestionResponse(response), eventId);
   }
 
   async updateQuestion(eventId: string, questionId: string, data: Partial<CreateQuestionRequest>): Promise<TicketQuestion> {
@@ -570,8 +656,23 @@ class TicketsService {
       await delay(400);
       return { id: questionId, eventId, label: '', type: 'text', required: false, ticketIds: ['all'], sortOrder: 0, ...data } as TicketQuestion;
     }
-    const response = await apiClient.put<ApiResponse<TicketQuestion>>(`/events/${eventId}/ticket-questions/${questionId}`, data);
-    return response.data;
+    const payload = {
+      ...(data.label !== undefined ? { label: data.label } : {}),
+      ...(data.type !== undefined ? { type: data.type === 'dropdown' ? 'SELECT' : data.type.toUpperCase() } : {}),
+      ...(data.required !== undefined ? { required: data.required } : {}),
+      ...(data.options !== undefined ? { options: data.options } : {}),
+      ...(data.description !== undefined ? { description: data.description } : {}),
+      ...(data.placeholder !== undefined ? { placeholder: data.placeholder } : {}),
+      ...(data.ticketIds !== undefined
+        ? {
+            scope: {
+              ticketTypeIds: data.ticketIds.length === 0 || data.ticketIds.includes('all') ? 'all' : data.ticketIds,
+            },
+          }
+        : {}),
+    };
+    const response = await apiClient.put<ApiResponse<any> | any>(`/events/${eventId}/ticket-questions/${questionId}`, payload);
+    return normalizeTicketQuestion(unwrapQuestionResponse(response), eventId);
   }
 
   async deleteQuestion(eventId: string, questionId: string): Promise<void> {
@@ -625,22 +726,67 @@ class TicketsService {
         mockTickets.filter((ticket) => ticket.eventId === 'evt-1'),
       );
     }
-    const eventResponse = await apiClient.get<PublishedWebsiteOverviewResponse>(`/public/events/${slug}/website`);
-    const event = eventResponse.event;
-    const tickets = await this.getTickets(event.id, { status: 'ACTIVE' });
-    return buildPublicTicketsResponse(
-      {
-        id: event.id,
-        slug: event.slug,
-        title: event.title,
-        date: event.startsAt || '',
-        time: event.startsAt || '',
-        currency: 'NGN',
-        venueLocation: event.venueName || event.venueAddress || '',
-        type: event.isOnline ? 'Virtual' : 'Physical',
-      },
-      tickets,
+    const [publicTicketResponse, eventResponse] = await Promise.all([
+      apiClient.get<PublicTicketTypesEndpointResponse>(`/public/events/${slug}/ticket-types`),
+      apiClient.get<PublishedWebsiteOverviewResponse>(`/public/events/${slug}/website`).catch(() => null),
+    ]);
+    const event = publicTicketResponse.event;
+    const fallbackEvent = eventResponse?.event;
+    const questions = (publicTicketResponse.ticketQuestions || []).map((question) =>
+      normalizeTicketQuestion(question, event.id),
     );
+
+    return {
+      event: {
+        id: event.id,
+        name: event.name || event.title || fallbackEvent?.title || 'Event',
+        slug: event.slug,
+        date: fallbackEvent?.startsAt || event.startsAt || '',
+        time: fallbackEvent?.startsAt || event.startsAt || '',
+        endDate: fallbackEvent?.endsAt || event.endsAt || undefined,
+        endTime: fallbackEvent?.endsAt || event.endsAt || undefined,
+        type: event.isOnline ? 'Virtual' : 'Physical',
+        coverImageUrl: fallbackEvent?.coverImageUrl || undefined,
+        venueLocation: fallbackEvent?.venueName || fallbackEvent?.venueAddress || event.venueName || event.venueAddress || undefined,
+        currency: event.currency || 'NGN',
+        summary: event.summary || fallbackEvent?.summary || undefined,
+      },
+      tickets: (publicTicketResponse.ticketTypes || []).map((ticket) => {
+        const accessRules = (ticket.accessRulesJson || {}) as Record<string, unknown>;
+        const checkoutQuestions = Array.isArray(ticket.checkoutQuestions)
+          ? ticket.checkoutQuestions.map((question) => normalizeTicketQuestion(question, event.id))
+          : questions.filter((question) =>
+              question.ticketIds.includes('all') || question.ticketIds.includes(ticket.id),
+            );
+        const ticketKind = ticket.ticketKind === 'GROUP' ? 'Group' : 'Single';
+        const attendeesPerUnit = ticket.attendeesPerUnit ?? ticket.groupSize ?? 1;
+
+        return {
+          id: ticket.id,
+          name: ticket.name,
+          description: ticket.description || undefined,
+          type: ticketKind,
+          groupSize: ticket.groupSize ?? undefined,
+          attendeesPerUnit,
+          isFree: (ticket.priceMinor || 0) === 0,
+          price: (ticket.priceMinor || 0) / 100,
+          available: ticket.capacity == null
+            ? Number.MAX_SAFE_INTEGER
+            : Math.max(0, ticket.capacity - (ticket.soldCount ?? 0)),
+          quantityTotal: ticket.capacity ?? (ticket.soldCount ?? 0),
+          minPerOrder: ticket.minPerOrder ?? 1,
+          maxPerOrder: ticket.maxPerOrder ?? 10,
+          perks: Array.isArray((accessRules as { perks?: unknown }).perks)
+            ? ((accessRules as { perks: Array<{ id?: string; name?: string }> }).perks || [])
+                .filter((perk) => perk && typeof perk.name === 'string')
+                .map((perk, index) => ({ id: perk.id || `${ticket.id}-perk-${index}`, name: perk.name as string }))
+            : [],
+          requireAttendeeInfo: accessRules.requireAttendeeInfo === true,
+          checkoutQuestions,
+        };
+      }),
+      questions,
+    };
   }
 
   saveActiveTicketOrderId(orderId: string | null) {
@@ -669,8 +815,9 @@ class TicketsService {
         email: data.email,
         currency: 'NGN',
         subtotalMinor: 500000,
+        vatMinor: 37500,
         feeMinor: 0,
-        totalMinor: 500000,
+        totalMinor: 537500,
         reservationExpiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
         metadataJson: data.metadataJson || null,
         createdAt: new Date().toISOString(),
@@ -678,9 +825,10 @@ class TicketsService {
         items: [],
       };
     }
-    const response = await apiClient.post<ApiResponse<TicketOrderResponse>>(`/events/${eventId}/ticket-orders`, data);
-    this.saveActiveTicketOrderId(response.data.id);
-    return response.data;
+    const response = await apiClient.post<ApiResponse<TicketOrderResponse> | TicketOrderResponse>(`/events/${eventId}/ticket-orders`, data);
+    const order = unwrapPayloadResponse(response);
+    this.saveActiveTicketOrderId(order.id);
+    return order;
   }
 
   async initializeCheckout(
@@ -700,11 +848,11 @@ class TicketsService {
         ticketOrderId,
       };
     }
-    const response = await apiClient.post<ApiResponse<InitializeCheckoutResponse>>(
+    const response = await apiClient.post<ApiResponse<InitializeCheckoutResponse> | InitializeCheckoutResponse>(
       `/payments/ticket-orders/${ticketOrderId}/checkout`,
       data,
     );
-    return response.data;
+    return unwrapPayloadResponse(response);
   }
 
   async getOrder(ticketOrderId: string): Promise<TicketOrderResponse> {
@@ -719,8 +867,9 @@ class TicketsService {
         email: 'demo@example.com',
         currency: 'NGN',
         subtotalMinor: 500000,
+        vatMinor: 37500,
         feeMinor: 0,
-        totalMinor: 500000,
+        totalMinor: 537500,
         reservationExpiresAt: null,
         metadataJson: null,
         createdAt: new Date().toISOString(),
@@ -728,8 +877,8 @@ class TicketsService {
         items: [],
       };
     }
-    const response = await apiClient.get<ApiResponse<TicketOrderResponse>>(`/ticket-orders/${ticketOrderId}`);
-    return response.data;
+    const response = await apiClient.get<ApiResponse<TicketOrderResponse> | TicketOrderResponse>(`/ticket-orders/${ticketOrderId}`);
+    return unwrapPayloadResponse(response);
   }
 
   async validateTicketQR(attendeeId: string, eventId: string) {

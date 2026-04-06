@@ -98,7 +98,7 @@ export const router = createBrowserRouter([
       { path: '/events/create', element: <RequireTenant><CreateEventRoute /></RequireTenant> },
       { path: '/finance', element: <RequireAuth><WithNav Component={FinanceManagement} /></RequireAuth> },
       { path: '/settings', element: <RequireAuth><WithNav Component={Settings} /></RequireAuth> },
-      { path: '/checkout/tickets/callback', element: <RequireAuth><TicketCheckoutCallback /></RequireAuth> },
+      { path: '/checkout/tickets/callback', element: <TicketCheckoutCallback /> },
 
       // ── Event Admin Routes ─────
       {

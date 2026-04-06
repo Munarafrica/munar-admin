@@ -15,7 +15,7 @@ import { CampaignDetailView } from '../components/voting/CampaignDetailView';
 import { useCampaigns, useVotingAnalytics } from '../hooks';
 import { VotingProvider, useVoting } from '../contexts';
 import { votingService, eventsService } from '../services';
-import { getCurrentEventId } from '../lib/event-storage';
+import { useEventId } from '../lib/navigation';
 import { 
   VotingCampaign, 
   VotingCategory, 
@@ -48,7 +48,7 @@ interface VotingManagementProps {
 }
 
 const VotingManagementContent: React.FC<VotingManagementProps> = ({ onNavigate }) => {
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
   const [activeTab, setActiveTab] = useState<
     'campaigns' | 'analytics' | 'results' | 'settings'
   >('campaigns');
@@ -631,8 +631,10 @@ const VotingManagementContent: React.FC<VotingManagementProps> = ({ onNavigate }
 
 // Wrap with VotingProvider
 export const VotingManagement: React.FC<VotingManagementProps> = (props) => {
+  const eventId = useEventId();
+
   return (
-    <VotingProvider eventId={getCurrentEventId()}>
+    <VotingProvider eventId={eventId}>
       <VotingManagementContent {...props} />
     </VotingProvider>
   );

@@ -9,6 +9,7 @@ export {
   type CreateFormRequest,
   type UpdateFormRequest,
   type PublicFormSubmitRequest,
+  type FormModuleSettings,
 } from './forms.service';
 export * as merchandiseService from './merchandise.service';
 export * as votingService from './voting.service';

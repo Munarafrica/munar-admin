@@ -3,6 +3,7 @@ import { apiClient } from '../lib/api-client';
 import { ApiResponse, MutationResponse } from '../types/api';
 import {
   AnalyticsFilters,
+  AnalyticsKpi,
   EventAnalytics,
   ExportRequest,
   ScheduleReportRequest,
@@ -26,6 +27,224 @@ const buildSeries = (days: number, base: number, variance: number): TimeSeriesPo
 
 const randomBetween = (min: number, max: number) => Math.round(min + Math.random() * (max - min));
 
+const buildKpi = (id: string, label: string, value: number, sparkline: TimeSeriesPoint[] = []): AnalyticsKpi => ({
+  id,
+  label,
+  value,
+  changePercent: 0,
+  sparkline,
+});
+
+const buildDefaultAnalytics = (eventId: string, currency: string): EventAnalytics => ({
+  eventId,
+  currency,
+  summary: {
+    registrations: buildKpi('registrations', 'Registrations', 0),
+    websiteViews: buildKpi('website-views', 'Website Views', 0),
+    ticketsSold: buildKpi('tickets-sold', 'Tickets Sold', 0),
+    totalRevenue: buildKpi('total-revenue', 'Total Revenue', 0),
+    checkIns: buildKpi('check-ins', 'Check-ins', 0),
+    surveyResponses: buildKpi('survey-responses', 'Survey Responses', 0),
+  },
+  ticketSales: {
+    totalRevenue: 0,
+    salesTrend: [],
+    revenueByType: [],
+    salesByChannel: [],
+    funnel: [],
+    inventoryWarnings: [],
+  },
+  attendance: {
+    registered: 0,
+    checkedIn: 0,
+    checkInRate: 0,
+    noShowRate: 0,
+    peakArrivalTimes: [],
+    sessionMetrics: [],
+    heatmap: [],
+  },
+  engagement: {
+    pollParticipation: 0,
+    voteCount: 0,
+    chatMessages: 0,
+    qnaQuestions: 0,
+    engagementRate: 0,
+    interactions: [],
+    sessionBookmarks: [],
+    speakerQna: [],
+    websiteClicks: [],
+  },
+  financial: {
+    revenueStreams: [],
+    costBreakdown: [],
+    totalRevenue: 0,
+    totalCost: 0,
+    roiPercent: 0,
+    revenuePerAttendee: 0,
+    cpaByChannel: [],
+  },
+  campaigns: {
+    campaigns: [],
+    landingPages: [],
+    channelPerformance: [],
+  },
+  content: {
+    viewTrend: [],
+    sessions: [],
+  },
+  networking: {
+    leadsCaptured: 0,
+    leadQualificationRate: 0,
+    conversions: 0,
+    meetingsSent: 0,
+    meetingsAccepted: 0,
+    messagesExchanged: 0,
+    topPairs: [],
+  },
+  reports: {
+    templates: [],
+    scheduled: [],
+    exportFormats: ['csv', 'pdf'],
+  },
+  alertsPrivacy: {
+    alerts: [],
+    notificationSettings: {
+      inApp: true,
+      email: true,
+    },
+    privacy: {
+      consentRequired: true,
+      behavioralTracking: true,
+      dataRetentionDays: 365,
+      anonymizePublicData: true,
+    },
+  },
+  comparisons: {
+    timeline: [],
+    comparisons: [],
+  },
+  filters: {
+    ticketTypes: ['All'],
+    channels: ['All'],
+    locations: ['All'],
+  },
+});
+
+type CanonicalSummaryResponse = {
+  eventId: string;
+  currency?: string;
+  summary: Record<string, { value?: number; unit?: string; scope?: string }>;
+  definitions?: Record<string, string>;
+  source?: EventAnalytics['source'];
+};
+
+const hasDetailedAnalytics = (payload: unknown): payload is EventAnalytics =>
+  Boolean(payload && typeof payload === 'object' && 'ticketSales' in payload && 'attendance' in payload);
+
+const hasCanonicalSummary = (payload: unknown): payload is CanonicalSummaryResponse =>
+  Boolean(payload && typeof payload === 'object' && 'summary' in payload);
+
+const normalizeCanonicalSummary = (payload: CanonicalSummaryResponse): EventAnalytics => {
+  const currency = payload.currency || config.app.defaultCurrency;
+  const base = buildDefaultAnalytics(payload.eventId, currency);
+  const registrations = Number(payload.summary.registrations?.value ?? 0);
+  const websiteViews = Number(payload.summary.websiteViews?.value ?? 0);
+  const ticketsSold = Number(payload.summary.ticketsSold?.value ?? 0);
+  const totalRevenueRaw = Number(payload.summary.totalRevenue?.value ?? 0);
+  const totalRevenue = payload.summary.totalRevenue?.unit === 'minor'
+    ? totalRevenueRaw / 100
+    : totalRevenueRaw;
+  const checkIns = Number(payload.summary.checkIns?.value ?? 0);
+  const surveyResponses = Number(payload.summary.surveyResponses?.value ?? 0);
+
+  return {
+    ...base,
+    summary: {
+      registrations: buildKpi('registrations', 'Registrations', registrations),
+      websiteViews: buildKpi('website-views', 'Website Views', websiteViews),
+      ticketsSold: buildKpi('tickets-sold', 'Tickets Sold', ticketsSold),
+      totalRevenue: buildKpi('total-revenue', 'Gross Revenue', totalRevenue),
+      checkIns: buildKpi('check-ins', 'Check-ins', checkIns),
+      surveyResponses: buildKpi('survey-responses', 'Survey Responses', surveyResponses),
+    },
+    ticketSales: {
+      ...base.ticketSales,
+      totalRevenue,
+    },
+    attendance: {
+      ...base.attendance,
+      registered: registrations,
+      checkedIn: checkIns,
+      checkInRate: registrations > 0 ? checkIns / registrations : 0,
+      noShowRate: registrations > 0 ? Math.max(registrations - checkIns, 0) / registrations : 0,
+    },
+    financial: {
+      ...base.financial,
+      totalRevenue,
+    },
+    comparisons: {
+      ...base.comparisons,
+      comparisons: [
+        {
+          year: new Date().getFullYear().toString(),
+          ticketsSold,
+          revenue: totalRevenue,
+          engagementScore: 0,
+          checkedIn: checkIns,
+          nps: 0,
+        },
+      ],
+    },
+    definitions: payload.definitions,
+    source: payload.source,
+  };
+};
+
+const normalizeEventAnalytics = (payload: unknown, eventId: string): EventAnalytics => {
+  if (hasDetailedAnalytics(payload)) {
+    const base = buildDefaultAnalytics(payload.eventId || eventId, payload.currency || config.app.defaultCurrency);
+    return {
+      ...base,
+      ...payload,
+      summary: {
+        ...base.summary,
+        ...payload.summary,
+      },
+      filters: {
+        ...base.filters,
+        ...payload.filters,
+      },
+    };
+  }
+
+  if (hasCanonicalSummary(payload)) {
+    return normalizeCanonicalSummary(payload);
+  }
+
+  return buildDefaultAnalytics(eventId, config.app.defaultCurrency);
+};
+
+const toApiParams = (filters: AnalyticsFilters) => {
+  const params: Record<string, string> = {};
+  const now = new Date();
+  const toDate = (date: Date) => date.toISOString().slice(0, 10);
+
+  if (filters.dateRange === 'custom') {
+    if (filters.startDate) params.startDate = filters.startDate;
+    if (filters.endDate) params.endDate = filters.endDate;
+    return params;
+  }
+
+  const start = new Date(now);
+  if (filters.dateRange === '30d') start.setDate(now.getDate() - 29);
+  else if (filters.dateRange === '90d') start.setDate(now.getDate() - 89);
+  else start.setDate(now.getDate() - 6);
+
+  params.startDate = toDate(start);
+  params.endDate = toDate(now);
+  return params;
+};
+
 const buildMockAnalytics = (eventId: string, filters: AnalyticsFilters): EventAnalytics => {
   const days = filters.dateRange === '30d' ? 30 : filters.dateRange === '90d' ? 90 : 7;
   const revenueTrend = buildSeries(days, 180000, 60000);
@@ -36,54 +255,20 @@ const buildMockAnalytics = (eventId: string, filters: AnalyticsFilters): EventAn
   const totalRevenue = revenueTrend.reduce((sum, p) => sum + p.value, 0);
   const totalTickets = ticketsTrend.reduce((sum, p) => sum + p.value, 0);
   const totalCheckedIn = checkInTrend.reduce((sum, p) => sum + p.value, 0);
+  const totalWebsiteViews = engagementTrend.reduce((sum, p) => sum + p.value, 0);
+  const totalSurveyResponses = randomBetween(10, 120);
   const revenuePerAttendee = totalCheckedIn ? totalRevenue / totalCheckedIn : 0;
 
   return {
     eventId,
     currency: config.app.defaultCurrency,
     summary: {
-      ticketsSold: {
-        id: 'tickets-sold',
-        label: 'Total tickets sold',
-        value: totalTickets,
-        changePercent: 12.4,
-        sparkline: ticketsTrend,
-      },
-      totalRevenue: {
-        id: 'total-revenue',
-        label: 'Total revenue',
-        value: totalRevenue,
-        changePercent: 8.1,
-        sparkline: revenueTrend,
-      },
-      totalCheckedIn: {
-        id: 'checked-in',
-        label: 'Total attendees checked in',
-        value: totalCheckedIn,
-        changePercent: 6.7,
-        sparkline: checkInTrend,
-      },
-      revenuePerAttendee: {
-        id: 'revenue-per-attendee',
-        label: 'Revenue per attendee',
-        value: revenuePerAttendee,
-        changePercent: 4.5,
-        sparkline: revenueTrend,
-      },
-      nps: {
-        id: 'nps',
-        label: 'Net Promoter Score',
-        value: 62,
-        changePercent: 3.1,
-        sparkline: engagementTrend,
-      },
-      engagementScore: {
-        id: 'engagement-score',
-        label: 'Engagement score',
-        value: 78,
-        changePercent: 5.2,
-        sparkline: engagementTrend,
-      },
+      registrations: buildKpi('registrations', 'Registrations', totalTickets, ticketsTrend),
+      websiteViews: buildKpi('website-views', 'Website Views', totalWebsiteViews, engagementTrend),
+      ticketsSold: buildKpi('tickets-sold', 'Tickets Sold', totalTickets, ticketsTrend),
+      totalRevenue: buildKpi('total-revenue', 'Total Revenue', totalRevenue, revenueTrend),
+      checkIns: buildKpi('check-ins', 'Check-ins', totalCheckedIn, checkInTrend),
+      surveyResponses: buildKpi('survey-responses', 'Survey Responses', totalSurveyResponses, engagementTrend),
     },
     ticketSales: {
       totalRevenue,
@@ -194,7 +379,7 @@ const buildMockAnalytics = (eventId: string, filters: AnalyticsFilters): EventAn
       totalRevenue: 4220000,
       totalCost: 1580000,
       roiPercent: 167,
-      revenuePerAttendee: revenuePerAttendee,
+      revenuePerAttendee,
       cpaByChannel: [
         { channel: 'Paid Ads', cpa: 3800 },
         { channel: 'Email', cpa: 2100 },
@@ -309,10 +494,18 @@ class AnalyticsService {
       return buildMockAnalytics(eventId, filters);
     }
 
-    const response = await apiClient.get<ApiResponse<EventAnalytics>>(`/events/${eventId}/analytics`, {
-      params: filters,
-    });
-    return response.data;
+    const response = await apiClient.get<ApiResponse<EventAnalytics | CanonicalSummaryResponse> | EventAnalytics | CanonicalSummaryResponse>(
+      `/events/${eventId}/analytics`,
+      {
+        params: toApiParams(filters),
+      },
+    );
+    const payload =
+      response && typeof response === 'object' && 'data' in response
+        ? response.data
+        : response;
+
+    return normalizeEventAnalytics(payload, eventId);
   }
 
   async exportReport(eventId: string, payload: ExportRequest): Promise<MutationResponse<{ url: string }>> {

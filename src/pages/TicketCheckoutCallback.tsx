@@ -96,12 +96,12 @@ export function TicketCheckoutCallback() {
       <div className="max-w-md w-full bg-white dark:bg-slate-900 rounded-2xl border border-slate-200 dark:border-slate-800 p-8 text-center shadow-sm">
         <div className="flex justify-center mb-4">{content.icon}</div>
         <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{content.title}</h1>
-        <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">{content.body}</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400 mt-2 mb-4">{content.body}</p>
 
         {order && (
-          <div className="mt-5 rounded-xl border border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/40 px-4 py-3 text-left">
-            <p className="text-xs text-slate-500 dark:text-slate-400">Order</p>
-            <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{order.id}</p>
+          <div className="mt-5 rounded-xl border border-slate-200/80 bg-slate-100/90 px-4 py-3 text-left dark:border-slate-700 dark:bg-slate-800/80">
+            <p className="text-xs font-medium text-slate-600 dark:text-slate-300">Order</p>
+            <p className="text-sm font-semibold break-all text-slate-900 dark:text-white">{order.id}</p>
           </div>
         )}
 

@@ -8,6 +8,8 @@ import {
   CreateBackendFormRequest,
   FormSubmissionResponse,
   SubmitFormRequest,
+  EventSettings,
+  UpdateEventSettingsRequest,
 } from '../types/api';
 import { Form, FormField, FormFieldType, FormResponse, FormSettings } from '../components/event-dashboard/types';
 import { delay, mockForms, mockFormResponses, generateId } from './mock/data';
@@ -49,6 +51,11 @@ export interface FormAnalyticsSummary {
 
 export interface UpdateFormRequest extends Partial<CreateFormRequest> {
   status?: 'draft' | 'published' | 'closed' | 'archived';
+}
+
+export interface FormModuleSettings {
+  enabled: boolean;
+  updatedAt?: string;
 }
 
 type BackendSchemaField = {
@@ -222,6 +229,18 @@ function mapPaymentStatus(paymentStatus: FormSubmissionResponse['paymentStatus']
   }
 }
 
+function extractResponseCount(form: BackendFormResponse): number {
+  const directCount =
+    form.responseCount ??
+    form.responsesCount ??
+    form.submissionCount ??
+    form.submissionsCount ??
+    form.totalSubmissions ??
+    form.stats?.totalSubmissions;
+
+  return typeof directCount === 'number' && directCount >= 0 ? directCount : 0;
+}
+
 function formFromBackend(form: BackendFormResponse): Form {
   const schema = (form.schemaJson || {}) as Record<string, unknown>;
   const schedule = (form.scheduleJson || {}) as Record<string, unknown>;
@@ -256,7 +275,7 @@ function formFromBackend(form: BackendFormResponse): Form {
       confirmationMessage:
         typeof branding.confirmationMessage === 'string' ? branding.confirmationMessage : undefined,
     },
-    responseCount: 0,
+    responseCount: extractResponseCount(form),
     createdAt: form.createdAt,
     updatedAt: form.updatedAt,
   };
@@ -383,7 +402,170 @@ function extractAnalyticsPayload(payload: MaybeWrapped<FormAnalyticsSummary | { 
   return unwrapped as FormAnalyticsSummary;
 }
 
+function readNonEmptyString(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (trimmed) {
+        return trimmed;
+      }
+    }
+  }
+  return undefined;
+}
+
+function normalizePublicFormResponse(raw: unknown): BackendFormResponse | null {
+  if (!raw || typeof raw !== 'object') {
+    return null;
+  }
+
+  const source = raw as Record<string, unknown>;
+  const form =
+    source.form && typeof source.form === 'object'
+      ? (source.form as Record<string, unknown>)
+      : source;
+
+  const schemaJson =
+    form.schemaJson && typeof form.schemaJson === 'object'
+      ? (form.schemaJson as Record<string, unknown>)
+      : Array.isArray(form.fields)
+        ? { fields: form.fields }
+        : {};
+
+  const brandingJson =
+    form.brandingJson && typeof form.brandingJson === 'object'
+      ? (form.brandingJson as Record<string, unknown>)
+      : {
+          description:
+            readNonEmptyString(form.description, form.subtitle) || '',
+        };
+
+  return {
+    id: readNonEmptyString(form.id, source.id) || '',
+    eventId: readNonEmptyString(form.eventId, source.eventId) || '',
+    title: readNonEmptyString(form.title, form.name, source.title, source.name) || 'Untitled Form',
+    formType: readNonEmptyString(form.formType, form.type, source.formType, source.type)?.toUpperCase() || 'CUSTOM',
+    status: readNonEmptyString(form.status, source.status)?.toUpperCase() || 'PUBLISHED',
+    schemaJson,
+    logicJson:
+      form.logicJson && typeof form.logicJson === 'object'
+        ? (form.logicJson as Record<string, unknown>)
+        : null,
+    paymentConfigJson:
+      form.paymentConfigJson && typeof form.paymentConfigJson === 'object'
+        ? (form.paymentConfigJson as Record<string, unknown>)
+        : null,
+    scheduleJson:
+      form.scheduleJson && typeof form.scheduleJson === 'object'
+        ? (form.scheduleJson as Record<string, unknown>)
+        : null,
+    accessControlJson:
+      form.accessControlJson && typeof form.accessControlJson === 'object'
+        ? (form.accessControlJson as Record<string, unknown>)
+        : null,
+    brandingJson,
+    responseCount: typeof form.responseCount === 'number' ? form.responseCount : undefined,
+    responsesCount: typeof form.responsesCount === 'number' ? form.responsesCount : undefined,
+    submissionCount: typeof form.submissionCount === 'number' ? form.submissionCount : undefined,
+    submissionsCount: typeof form.submissionsCount === 'number' ? form.submissionsCount : undefined,
+    totalSubmissions: typeof form.totalSubmissions === 'number' ? form.totalSubmissions : undefined,
+    stats:
+      form.stats && typeof form.stats === 'object'
+        ? (form.stats as { totalSubmissions?: number })
+        : null,
+    publishedAt: typeof form.publishedAt === 'string' ? form.publishedAt : null,
+    createdAt: typeof form.createdAt === 'string' ? form.createdAt : new Date().toISOString(),
+    updatedAt: typeof form.updatedAt === 'string' ? form.updatedAt : new Date().toISOString(),
+  };
+}
+
+function extractPublicFormsPayload(payload: unknown): {
+  event: { id: string; name: string };
+  forms: BackendFormResponse[];
+} {
+  const source = payload && typeof payload === 'object' ? (payload as Record<string, unknown>) : {};
+  const eventSource =
+    source.event && typeof source.event === 'object'
+      ? (source.event as Record<string, unknown>)
+      : source;
+  const formsSource = Array.isArray(source.forms)
+    ? source.forms
+    : Array.isArray(source.items)
+      ? source.items
+      : Array.isArray(source.data)
+        ? source.data
+        : [];
+
+  return {
+    event: {
+      id: readNonEmptyString(eventSource.id, source.eventId) || '',
+      name: readNonEmptyString(eventSource.title, eventSource.name, source.title, source.name) || '',
+    },
+    forms: formsSource
+      .map((form) => normalizePublicFormResponse(form))
+      .filter((form): form is BackendFormResponse => Boolean(form)),
+  };
+}
+
+function extractPublicFormsEnvelope(payload: unknown) {
+  if (payload && typeof payload === 'object') {
+    const source = payload as Record<string, unknown>;
+    if (Array.isArray(source.forms) || source.event || source.settings) {
+      return payload;
+    }
+  }
+
+  return unwrapApiData(payload as MaybeWrapped<unknown>);
+}
+
+function extractPublicFormEnvelope(payload: unknown) {
+  if (payload && typeof payload === 'object') {
+    const source = payload as Record<string, unknown>;
+    if (source.form || source.title || source.name || source.schemaJson || source.fields) {
+      return payload;
+    }
+  }
+
+  return unwrapApiData(payload as MaybeWrapped<unknown>);
+}
+
 class FormsService {
+  async getFormModuleSettings(eventId: string): Promise<FormModuleSettings> {
+    if (config.features.useMockData) {
+      await delay(200);
+      return { enabled: true, updatedAt: new Date().toISOString() };
+    }
+
+    const settings = await apiClient.get<EventSettings>(`/events/${eventId}/settings`);
+    return {
+      enabled: settings.modulesEnabledJson?.forms === true,
+      updatedAt: settings.updatedAt,
+    };
+  }
+
+  async updateFormModuleSettings(eventId: string, enabled: boolean): Promise<FormModuleSettings> {
+    if (config.features.useMockData) {
+      await delay(200);
+      return { enabled, updatedAt: new Date().toISOString() };
+    }
+
+    const existing = await apiClient.get<EventSettings>(`/events/${eventId}/settings`);
+    const updated = await apiClient.patch<EventSettings>(
+      `/events/${eventId}/settings`,
+      {
+        modulesEnabledJson: {
+          ...(existing.modulesEnabledJson ?? {}),
+          forms: enabled,
+        },
+      } satisfies UpdateEventSettingsRequest,
+    );
+
+    return {
+      enabled: updated.modulesEnabledJson?.forms === true,
+      updatedAt: updated.updatedAt,
+    };
+  }
+
   async getForms(eventId: string, params?: SearchParams): Promise<Form[]> {
     if (config.features.useMockData) {
       await delay(400);
@@ -391,7 +573,28 @@ class FormsService {
     }
 
     const response = await apiClient.get<MaybeWrapped<BackendFormResponse[]>>(`/events/${eventId}/forms`, { params });
-    return unwrapApiData(response).map(formFromBackend);
+    const forms = unwrapApiData(response).map(formFromBackend);
+
+    const formsNeedingCounts = forms.filter((form) => form.responseCount === 0);
+    if (formsNeedingCounts.length === 0) {
+      return forms;
+    }
+
+    const analyticsResults = await Promise.allSettled(
+      formsNeedingCounts.map((form) => this.getFormAnalytics(eventId, form.id)),
+    );
+
+    const countByFormId = new Map<string, number>();
+    analyticsResults.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        countByFormId.set(formsNeedingCounts[index].id, result.value.totalSubmissions || 0);
+      }
+    });
+
+    return forms.map((form) => ({
+      ...form,
+      responseCount: countByFormId.get(form.id) ?? form.responseCount,
+    }));
   }
 
   async getForm(eventId: string, formId: string): Promise<Form> {
@@ -691,13 +894,10 @@ class FormsService {
     }
 
     const response = await apiClient.get<MaybeWrapped<any>>(`/public/events/${slug}/forms`);
-    const payload = unwrapApiData(response);
+    const payload = extractPublicFormsPayload(extractPublicFormsEnvelope(response));
     return {
-      event: {
-        id: payload.event?.id || '',
-        name: payload.event?.title || payload.event?.name || '',
-      },
-      forms: Array.isArray(payload.forms) ? payload.forms.map((form: BackendFormResponse) => formFromBackend(form)) : [],
+      event: payload.event,
+      forms: payload.forms.map((form) => formFromBackend(form)),
     };
   }
 
@@ -710,8 +910,8 @@ class FormsService {
     }
 
     const response = await apiClient.get<MaybeWrapped<any>>(`/public/events/${slug}/forms/${formId}`);
-    const payload = unwrapApiData(response);
-    return formFromBackend(payload.form || payload);
+    const payload = extractPublicFormEnvelope(response);
+    return formFromBackend(normalizePublicFormResponse((payload as { form?: unknown }).form || payload) || payload);
   }
 
   async submitPublicForm(slug: string, formId: string, data: PublicFormSubmitRequest) {

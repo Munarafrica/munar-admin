@@ -92,6 +92,12 @@ export const OrderDetailModal: React.FC<OrderDetailModalProps> = ({
                   </dd>
                 </div>
                 <div className="flex justify-between gap-4">
+                  <dt className="text-slate-500 dark:text-slate-400">VAT (7.5%)</dt>
+                  <dd className="text-right text-slate-900 dark:text-slate-100">
+                    {formatMoney(order.vatMinor ?? 0, order.currency)}
+                  </dd>
+                </div>
+                <div className="flex justify-between gap-4">
                   <dt className="text-slate-500 dark:text-slate-400">Shipping</dt>
                   <dd className="text-right text-slate-900 dark:text-slate-100">
                     {formatMoney(order.shippingMinor, order.currency)}

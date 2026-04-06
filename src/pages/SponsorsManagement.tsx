@@ -13,7 +13,7 @@ import { useSponsors } from '../hooks';
 import { Sponsor } from '../types/sponsors';
 import { Plus, Search, Link as LinkIcon, ExternalLink, Copy, Filter, Loader2, ChevronLeft } from 'lucide-react';
 import { eventsService } from '../services';
-import { getCurrentEventId } from '../lib/event-storage';
+import { useEventId } from '../lib/navigation';
 
 interface SponsorsManagementProps {
   onNavigate: (page: Page) => void;
@@ -29,7 +29,7 @@ const slugify = (value: string) =>
     .replace(/(^-|-$)+/g, '') || 'event';
 
 export const SponsorsManagement: React.FC<SponsorsManagementProps> = ({ onNavigate }) => {
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
   const { sponsors, isLoading, addSponsor, editSponsor, removeSponsor, reorderSponsor, toggleVisibility } = useSponsors({
     eventId,
   });

@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { TopBar } from "../components/dashboard/TopBar";
 import { Page, Form, FormType } from "../components/event-dashboard/types";
 import { Button } from "../components/ui/button";
@@ -16,12 +16,15 @@ import {
   Send,
   XCircle,
   Archive,
+  Globe,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { cn } from "../components/ui/utils";
 import { FormBuilder } from "../components/event-dashboard/forms/FormBuilder";
 import { FormResponseViewer } from "../components/event-dashboard/forms/FormResponseViewer";
-import { eventsService } from "../services";
-import { getCurrentEventId } from "../lib/event-storage";
+import { eventsService, formsService } from "../services";
+import { useEventId } from "../lib/navigation";
 import { useForms } from "../hooks/useForms";
 import { useEvent } from "../contexts";
 import { toast } from "sonner";
@@ -39,7 +42,7 @@ export const FormManagement: React.FC<FormManagementProps> = ({
   onNavigate,
 }) => {
   const [view, setView] = useState<"list" | "builder" | "responses">("list");
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
   const { currentEvent } = useEvent();
   const eventSlug = currentEvent?.slug || eventId;
 
@@ -60,8 +63,55 @@ export const FormManagement: React.FC<FormManagementProps> = ({
   const [newFormName, setNewFormName] = useState("");
   const [confirmAction, setConfirmAction] = useState<ConfirmActionState>(null);
   const [isConfirming, setIsConfirming] = useState(false);
+  const [publicFormsEnabled, setPublicFormsEnabled] = useState(false);
+  const [savedPublicFormsEnabled, setSavedPublicFormsEnabled] = useState(false);
+  const [isLoadingModuleSettings, setIsLoadingModuleSettings] =
+    useState(true);
+  const [isSavingModuleSettings, setIsSavingModuleSettings] = useState(false);
 
   const formsBaseUrl = `${window.location.origin}/e/${eventSlug}/forms`;
+  const hasPublishedForms = useMemo(
+    () => forms.some((form) => form.status === "published"),
+    [forms],
+  );
+
+  useEffect(() => {
+    let isCancelled = false;
+
+    const loadModuleSettings = async () => {
+      if (!eventId) {
+        setIsLoadingModuleSettings(false);
+        return;
+      }
+
+      setIsLoadingModuleSettings(true);
+      try {
+        const settings = await formsService.getFormModuleSettings(eventId);
+        if (!isCancelled) {
+          setPublicFormsEnabled(settings.enabled);
+          setSavedPublicFormsEnabled(settings.enabled);
+        }
+      } catch (error) {
+        if (!isCancelled) {
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Unable to load forms module settings.",
+          );
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsLoadingModuleSettings(false);
+        }
+      }
+    };
+
+    void loadModuleSettings();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [eventId]);
 
   const copyLink = async (url: string) => {
     try {
@@ -216,6 +266,31 @@ export const FormManagement: React.FC<FormManagementProps> = ({
     setCurrentForm(undefined);
   };
 
+  const handleSavePublicAccess = async () => {
+    if (!eventId) return;
+
+    setIsSavingModuleSettings(true);
+    try {
+      const updated = await formsService.updateFormModuleSettings(
+        eventId,
+        publicFormsEnabled,
+      );
+      setPublicFormsEnabled(updated.enabled);
+      setSavedPublicFormsEnabled(updated.enabled);
+      toast.success(
+        updated.enabled ? "Public forms enabled" : "Public forms disabled",
+      );
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Unable to update public forms access.",
+      );
+    } finally {
+      setIsSavingModuleSettings(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-background flex flex-col font-['Raleway']">
       {view === "list" && <TopBar onNavigate={onNavigate} />}
@@ -229,7 +304,7 @@ export const FormManagement: React.FC<FormManagementProps> = ({
         {view === "list" ? (
           <>
             {/* Header */}
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-8">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6">
               <div>
                 <div className="flex items-center gap-2 text-sm text-slate-500 dark:text-slate-400 font-medium mb-1">
                   <button
@@ -244,38 +319,130 @@ export const FormManagement: React.FC<FormManagementProps> = ({
                   Forms & Surveys
                 </h1>
               </div>
-              <div className="flex flex-col md:items-end gap-2 md:gap-3">
-                <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-700 dark:text-slate-200">
-                  <LinkIcon className="w-4 h-4 text-indigo-600" />
-                  <span className="truncate max-w-[220px]" title={formsBaseUrl}>
+              <Button
+                onClick={handleCreateClick}
+                className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 shadow-sm shadow-indigo-200 dark:shadow-none"
+              >
+                <Plus className="w-4 h-4" />
+                Create Form
+              </Button>
+            </div>
+
+            <section className="mb-6 rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-800 dark:bg-slate-900 overflow-hidden">
+              <div className="flex flex-col gap-4 border-b border-slate-200 px-5 py-4 dark:border-slate-800 lg:flex-row lg:items-center lg:justify-between">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-3">
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-sm font-semibold text-slate-900 dark:text-slate-100">
+                          Public Forms Access
+                        </h2>
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-medium border",
+                            publicFormsEnabled
+                              ? "border-emerald-200 bg-emerald-100 text-emerald-700 dark:border-emerald-900/40 dark:bg-emerald-950/40 dark:text-emerald-300"
+                              : "border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-300",
+                          )}
+                        >
+                          {publicFormsEnabled ? "Visible" : "Hidden"}
+                        </span>
+                        {!hasPublishedForms ? (
+                          <span className="inline-flex items-center rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-medium text-amber-700 dark:bg-amber-950/40 dark:text-amber-300">
+                            Publish a form first
+                          </span>
+                        ) : null}
+                      </div>
+                      <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                        Let people visit your forms page and respond to any form you have published.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex min-w-0 items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 lg:max-w-[420px]">
+                  <LinkIcon className="h-4 w-4 shrink-0 text-indigo-600" />
+                  <span className="truncate" title={formsBaseUrl}>
                     {formsBaseUrl}
                   </span>
                   <button
                     onClick={() => copyLink(formsBaseUrl)}
-                    className="p-1 hover:text-indigo-600"
-                    title="Copy link"
+                    className="shrink-0 rounded-md p-1 transition-colors hover:text-indigo-600"
+                    title="Copy public link"
                   >
-                    <Copy className="w-4 h-4" />
+                    <Copy className="h-4 w-4" />
                   </button>
                   <a
                     href={formsBaseUrl}
                     target="_blank"
                     rel="noreferrer"
-                    className="p-1 hover:text-indigo-600"
-                    title="Open"
+                    className="shrink-0 rounded-md p-1 transition-colors hover:text-indigo-600"
+                    title="Open public page"
                   >
-                    <ExternalLink className="w-4 h-4" />
+                    <ExternalLink className="h-4 w-4" />
                   </a>
                 </div>
-                <Button
-                  onClick={handleCreateClick}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 shadow-sm shadow-indigo-200 dark:shadow-none"
-                >
-                  <Plus className="w-4 h-4" />
-                  Create Form
-                </Button>
               </div>
-            </div>
+
+              <div className="flex flex-col gap-3 px-5 py-4 lg:flex-row lg:items-center lg:justify-between">
+                <div className="flex items-start gap-3">
+                  <button
+                    type="button"
+                    disabled={isLoadingModuleSettings || isSavingModuleSettings}
+                    onClick={() => setPublicFormsEnabled((value) => !value)}
+                    className={cn(
+                      "relative mt-0.5 h-6 w-12 shrink-0 rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50",
+                      publicFormsEnabled
+                        ? "bg-indigo-600"
+                        : "bg-slate-300 dark:bg-slate-700",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "absolute top-1 h-4 w-4 rounded-full bg-white transition-all",
+                        publicFormsEnabled ? "left-7" : "left-1",
+                      )}
+                    />
+                  </button>
+                  <div>
+                    <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                      Show forms to attendees
+                    </p>
+                    <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+                      Switch this on when you are ready for visitors to use your forms page.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+                  <div className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300">
+                    {publicFormsEnabled ? (
+                      <Eye className="h-4 w-4 text-emerald-600 dark:text-emerald-400" />
+                    ) : (
+                      <EyeOff className="h-4 w-4 text-slate-400 dark:text-slate-500" />
+                    )}
+                    <span>
+                      {isLoadingModuleSettings
+                        ? "Checking access..."
+                        : publicFormsEnabled
+                          ? "Attendees can open the forms page"
+                          : "Attendees cannot open the forms page yet"}
+                    </span>
+                  </div>
+
+                  <Button
+                    onClick={handleSavePublicAccess}
+                    disabled={
+                      isLoadingModuleSettings ||
+                      isSavingModuleSettings ||
+                      publicFormsEnabled === savedPublicFormsEnabled
+                    }
+                  >
+                    {isSavingModuleSettings ? "Saving..." : "Save changes"}
+                  </Button>
+                </div>
+              </div>
+            </section>
 
             {/* Forms List */}
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm overflow-hidden">
@@ -338,6 +505,18 @@ export const FormManagement: React.FC<FormManagementProps> = ({
                               <div className="flex items-center gap-2 min-w-0">
                                 <span className="font-semibold text-slate-900 dark:text-slate-100 truncate">
                                   {form.title}
+                                </span>
+                                <span
+                                  className={cn(
+                                    "shrink-0 inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                                    publicFormsEnabled && form.status === "published"
+                                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300"
+                                      : "bg-slate-100 text-slate-600 dark:bg-slate-800 dark:text-slate-300",
+                                  )}
+                                >
+                                  {publicFormsEnabled && form.status === "published"
+                                    ? "Public"
+                                    : "Private"}
                                 </span>
                                 <button
                                   onClick={() => handleViewResponses(form)}

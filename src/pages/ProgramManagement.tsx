@@ -7,7 +7,7 @@ import { cn } from "../components/ui/utils";
 import { SpeakersTab } from "../components/event-dashboard/program/SpeakersTab";
 import { ScheduleTab } from "../components/event-dashboard/program/ScheduleTab";
 import { eventsService } from "../services";
-import { getCurrentEventId } from "../lib/event-storage";
+import { useEventId } from "../lib/navigation";
 import { useProgram } from "../hooks/useProgram";
 import { toast } from 'sonner';
 
@@ -17,7 +17,7 @@ interface ProgramManagementProps {
 
 export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate }) => {
   const [activeTab, setActiveTab] = useState<'speakers' | 'schedule'>('speakers');
-  const eventId = getCurrentEventId() ?? '';
+  const eventId = useEventId();
 
   const {
     speakers,

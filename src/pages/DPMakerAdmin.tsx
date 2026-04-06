@@ -7,14 +7,14 @@ import { cn } from '../components/ui/utils';
 import { toast } from 'sonner';
 import { drawShape, createShapeClipPath } from '../utils/canvas-shapes';
 import { eventsService } from '../services';
-import { getCurrentEventId } from '../lib/event-storage';
+import { useEventId } from '../lib/navigation';
 
 interface DPMakerAdminProps {
   onNavigate?: (page: Page) => void;
 }
 
 export const DPMakerAdmin: React.FC<DPMakerAdminProps> = ({ onNavigate }) => {
-  const eventId = getCurrentEventId();
+  const eventId = useEventId();
 
   const [step, setStep] = useState<'upload' | 'configure' | 'preview'>('upload');
   const [frameImage, setFrameImage] = useState<string | null>(null);
