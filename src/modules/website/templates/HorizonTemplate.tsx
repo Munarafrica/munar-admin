@@ -91,6 +91,7 @@ interface HorizonTemplateProps {
   speakers?: Speaker[];
   sessions?: Session[];
   sponsors?: Sponsor[];
+  sponsorsGrayscale?: boolean;
   onSectionClick?: (id: SectionId) => void;
   selectedSection?: SectionId | null;
   isPreviewMode?: boolean;
@@ -103,7 +104,7 @@ interface HorizonTemplateProps {
 
 export function HorizonTemplate({
   event, config, speakers = [], sessions = [], sponsors = [],
-  onSectionClick, selectedSection, isPreviewMode, activeBreakpoint, onSectionOverrideUpdate, onSectionReorder,
+  sponsorsGrayscale = false, onSectionClick, selectedSection, isPreviewMode, activeBreakpoint, onSectionOverrideUpdate, onSectionReorder,
 }: HorizonTemplateProps) {
   const { eventSlug } = useParams<{ eventSlug: string }>();
   const [searchParams] = useSearchParams();
@@ -704,7 +705,7 @@ export function HorizonTemplate({
             <a key={sp.id} href={sp.websiteUrl || '#'} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
               className="flex items-center justify-center p-4 bg-white border border-slate-200 hover:border-slate-300 hover:shadow-sm transition-all"
               style={{ borderRadius: getRadius(theme.borderRadius) }} title={sp.name}>
-              {sp.logoUrl ? <img src={sp.logoUrl} alt={sp.name} className="h-10 max-w-[140px] object-contain" /> : <span className="text-sm font-semibold text-slate-600">{sp.name}</span>}
+              {sp.logoUrl ? <img src={sp.logoUrl} alt={sp.name} className={cn('h-10 max-w-[140px] object-contain', sponsorsGrayscale && 'grayscale')} /> : <span className="text-sm font-semibold text-slate-600">{sp.name}</span>}
             </a>
           ))}
         </div>

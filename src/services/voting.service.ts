@@ -10,6 +10,8 @@ import {
   VotingRound,
   VotePackage,
   VotingAnalytics,
+  VotingSummary,
+  VotingResults,
   VotingSettings,
   ContestantResult,
   CreateCampaignRequest,
@@ -42,9 +44,47 @@ import {
   delay,
 } from './mock/voting-data';
 
+export const votingApiAvailable = config.features.votingApiAvailable;
+
+const emptyVotingSummary = (currency = config.app.defaultCurrency): VotingSummary => ({
+  totalVotes: 0,
+  revenueMinor: 0,
+  currency,
+  contestants: 0,
+  activeCampaigns: 0,
+});
+
+const emptyVotingSettings = (eventId: string): VotingSettings => ({
+  eventId,
+  defaultVotingMode: 'free',
+  defaultEligibility: 'open',
+  defaultTransparency: 'live',
+  notifyOnVotingStart: true,
+  notifyOnVotingEnd: true,
+  notifyVotersOfResults: true,
+  reminderBeforeEnd: false,
+  reminderHours: 24,
+  defaultCaptchaEnabled: false,
+  defaultVoteTimeout: 5,
+  showVotingOnEventSite: true,
+  embedWidgetEnabled: false,
+});
+
+const emptyVotingResults = (campaignId = ''): VotingResults => ({
+  campaignId,
+  categories: [],
+  totalVotes: 0,
+  totalRevenueMinor: 0,
+});
+
 // ============ Campaigns ============
 
 export async function getCampaigns(eventId: string): Promise<VotingCampaign[]> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    return [];
+  }
+
   if (config.features.useMockData) {
     await delay();
     return getMockCampaigns().filter(c => c.eventId === eventId);
@@ -54,6 +94,11 @@ export async function getCampaigns(eventId: string): Promise<VotingCampaign[]> {
 }
 
 export async function getCampaign(eventId: string, campaignId: string): Promise<VotingCampaign> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    throw new Error('Voting campaigns are not available yet');
+  }
+
   if (config.features.useMockData) {
     await delay();
     const campaign = getMockCampaigns().find(c => c.id === campaignId && c.eventId === eventId);
@@ -65,6 +110,11 @@ export async function getCampaign(eventId: string, campaignId: string): Promise<
 }
 
 export async function createCampaign(eventId: string, data: CreateCampaignRequest): Promise<VotingCampaign> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    throw new Error('Voting campaign creation is not available yet');
+  }
+
   if (config.features.useMockData) {
     await delay();
     
@@ -132,6 +182,11 @@ export async function updateCampaign(
   campaignId: string,
   data: UpdateCampaignRequest
 ): Promise<VotingCampaign> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    throw new Error('Voting campaign updates are not available yet');
+  }
+
   if (config.features.useMockData) {
     await delay();
     updateMockCampaign(campaignId, data as Partial<VotingCampaign>);
@@ -144,6 +199,11 @@ export async function updateCampaign(
 }
 
 export async function deleteCampaign(eventId: string, campaignId: string): Promise<void> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    throw new Error('Voting campaign deletion is not available yet');
+  }
+
   if (config.features.useMockData) {
     await delay();
     deleteMockCampaign(campaignId);
@@ -675,7 +735,12 @@ export async function advanceContestants(
 export async function getVotingAnalytics(
   eventId: string,
   campaignId?: string
-): Promise<VotingAnalytics> {
+): Promise<VotingAnalytics | null> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    return null;
+  }
+
   if (config.features.useMockData) {
     await delay();
     return mockVotingAnalytics;
@@ -693,6 +758,11 @@ export async function getResults(
   campaignId: string,
   roundId?: string
 ): Promise<ContestantResult[]> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    return [];
+  }
+
   if (config.features.useMockData) {
     await delay();
     let results = [...mockResults];
@@ -717,6 +787,11 @@ export async function exportResults(
   campaignId: string,
   format: 'csv' | 'pdf'
 ): Promise<Blob> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    throw new Error('Voting result export is not available yet');
+  }
+
   if (config.features.useMockData) {
     await delay();
     // Return a mock blob
@@ -732,6 +807,11 @@ export async function exportResults(
 // ============ Settings ============
 
 export async function getVotingSettings(eventId: string): Promise<VotingSettings> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    return emptyVotingSettings(eventId);
+  }
+
   if (config.features.useMockData) {
     await delay();
     return mockVotingSettings;
@@ -744,12 +824,161 @@ export async function updateVotingSettings(
   eventId: string,
   data: Partial<VotingSettings>
 ): Promise<VotingSettings> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    return { ...emptyVotingSettings(eventId), ...data };
+  }
+
   if (config.features.useMockData) {
     await delay();
     return { ...mockVotingSettings, ...data };
   }
   
   return await apiClient.patch<VotingSettings>(`/events/${eventId}/voting/settings`, data);
+}
+
+// ============ Event voting adapter ============
+
+export async function getEventVotingSummary(eventId: string): Promise<VotingSummary> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    return emptyVotingSummary();
+  }
+
+  if (config.features.useMockData) {
+    await delay();
+    const campaigns = getMockCampaigns().filter(c => c.eventId === eventId);
+    return {
+      totalVotes: campaigns.reduce((sum, campaign) => sum + campaign.totalVotes, 0),
+      revenueMinor: campaigns.reduce((sum, campaign) => sum + campaign.totalRevenue, 0),
+      currency: campaigns[0]?.currency || config.app.defaultCurrency,
+      contestants: campaigns.reduce(
+        (sum, campaign) =>
+          sum + campaign.categories.reduce((catSum, category) => catSum + category.contestants.length, 0),
+        0
+      ),
+      activeCampaigns: campaigns.filter(campaign => campaign.status === 'active').length,
+    };
+  }
+
+  return await apiClient.get<VotingSummary>(`/events/${eventId}/voting/summary`);
+}
+
+export const getEventVotingSettings = getVotingSettings;
+export const updateEventVotingSettings = updateVotingSettings;
+
+export async function listVotingCampaigns(
+  eventId: string,
+  filters?: { search?: string; status?: string }
+): Promise<VotingCampaign[]> {
+  const campaigns = await getCampaigns(eventId);
+  return campaigns.filter(campaign => {
+    const matchesSearch =
+      !filters?.search ||
+      campaign.name.toLowerCase().includes(filters.search.toLowerCase()) ||
+      campaign.description?.toLowerCase().includes(filters.search.toLowerCase());
+    const matchesStatus = !filters?.status || filters.status === 'all' || campaign.status === filters.status;
+    return matchesSearch && matchesStatus;
+  });
+}
+
+export async function getVotingCampaign(campaignId: string): Promise<VotingCampaign> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    throw new Error('Voting campaigns are not available yet');
+  }
+
+  if (config.features.useMockData) {
+    await delay();
+    const campaign = getMockCampaigns().find(c => c.id === campaignId);
+    if (!campaign) throw new Error('Campaign not found');
+    return campaign;
+  }
+
+  return await apiClient.get<VotingCampaign>(`/voting/campaigns/${campaignId}`);
+}
+
+export const createVotingCampaign = createCampaign;
+export const updateVotingCampaign = updateCampaign;
+export const deleteVotingCampaign = deleteCampaign;
+
+export async function getVotingCampaignAnalytics(campaignId: string): Promise<VotingAnalytics | null> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    return null;
+  }
+
+  if (config.features.useMockData) {
+    await delay();
+    return mockVotingAnalytics;
+  }
+
+  return await apiClient.get<VotingAnalytics>(`/voting/campaigns/${campaignId}/analytics`);
+}
+
+export async function getVotingCampaignResults(
+  campaignId: string,
+  options?: { hideVotes?: boolean }
+): Promise<VotingResults> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    return emptyVotingResults(campaignId);
+  }
+
+  if (config.features.useMockData) {
+    await delay();
+    const resultsByCategory = mockResults.reduce<Record<string, VotingResults['categories'][number]>>((acc, result) => {
+      if (!acc[result.categoryId]) {
+        acc[result.categoryId] = {
+          id: result.categoryId,
+          name: result.categoryName,
+          totalVotes: 0,
+          contestants: [],
+        };
+      }
+
+      const votes = options?.hideVotes ? 0 : result.totalVotes;
+      acc[result.categoryId].totalVotes += votes;
+      acc[result.categoryId].contestants.push({
+        id: result.contestantId,
+        name: result.contestantName,
+        imageUrl: result.contestantImageUrl || null,
+        votes,
+        revenueMinor: result.revenue || 0,
+        rank: result.rank,
+      });
+      return acc;
+    }, {});
+
+    const categories = Object.values(resultsByCategory);
+    return {
+      campaignId,
+      categories,
+      totalVotes: categories.reduce((sum, category) => sum + category.totalVotes, 0),
+      totalRevenueMinor: mockResults.reduce((sum, result) => sum + (result.revenue || 0), 0),
+    };
+  }
+
+  const hideVotes = options?.hideVotes ? 'true' : 'false';
+  return await apiClient.get<VotingResults>(`/voting/campaigns/${campaignId}/results?hideVotes=${hideVotes}`);
+}
+
+export async function exportVotingResultsCsv(campaignId: string): Promise<Blob> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    throw new Error('CSV export is not available yet');
+  }
+
+  return await apiClient.get<Blob>(`/voting/campaigns/${campaignId}/results/export.csv`);
+}
+
+export async function exportVotingResultsPdf(campaignId: string): Promise<Blob> {
+  if (!votingApiAvailable) {
+    await delay(100);
+    throw new Error('PDF export is not available yet');
+  }
+
+  return await apiClient.get<Blob>(`/voting/campaigns/${campaignId}/results/export.pdf`);
 }
 
 // ============ Vote Packages ============

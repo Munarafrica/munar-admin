@@ -4,33 +4,32 @@ import { TopBar } from '../components/dashboard/TopBar';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Switch } from '../components/ui/switch';
-import { Badge } from '../components/ui/badge';
-import { cn } from '../components/ui/utils';
 import { SponsorCard } from '../components/sponsors/SponsorCard';
 import { SponsorModal } from '../components/sponsors/SponsorModal';
 import { SponsorsSection } from '../components/public/SponsorsSection';
 import { useSponsors } from '../hooks';
 import { Sponsor } from '../types/sponsors';
-import { Plus, Search, Link as LinkIcon, ExternalLink, Copy, Filter, Loader2, ChevronLeft } from 'lucide-react';
-import { eventsService } from '../services';
+import { Plus, Search, Filter, Loader2, ChevronLeft } from 'lucide-react';
 import { useEventId } from '../lib/navigation';
 
 interface SponsorsManagementProps {
   onNavigate: (page: Page) => void;
 }
 
-const MOCK_EVENT_NAME = 'Lagos Tech Summit 2026';
-
-const slugify = (value: string) =>
-  value
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/(^-|-$)+/g, '') || 'event';
-
 export const SponsorsManagement: React.FC<SponsorsManagementProps> = ({ onNavigate }) => {
   const eventId = useEventId();
-  const { sponsors, isLoading, addSponsor, editSponsor, removeSponsor, reorderSponsor, toggleVisibility } = useSponsors({
+  const {
+    sponsors,
+    grayscaleLogos,
+    isLoading,
+    error,
+    addSponsor,
+    editSponsor,
+    removeSponsor,
+    reorderSponsor,
+    toggleVisibility,
+    updateGrayscaleLogos,
+  } = useSponsors({
     eventId,
   });
 
@@ -38,10 +37,6 @@ export const SponsorsManagement: React.FC<SponsorsManagementProps> = ({ onNaviga
   const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'visible' | 'hidden'>('all');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSponsor, setEditingSponsor] = useState<Sponsor | null>(null);
-  const [grayscale, setGrayscale] = useState(true);
-
-  const eventSlug = slugify(MOCK_EVENT_NAME);
-  const publicUrl = `https://${eventSlug}.munar.com/sponsors`;
 
   const filteredSponsors = useMemo(() => {
     return sponsors
@@ -72,13 +67,6 @@ export const SponsorsManagement: React.FC<SponsorsManagementProps> = ({ onNaviga
       await editSponsor(editingSponsor.id, payload);
     } else {
       await addSponsor(payload);
-      eventsService.updateModuleCount(
-        eventId,
-        'Sponsors',
-        sponsors.length + 1,
-        `Added sponsor "${payload.name}"`,
-        'users'
-      );
     }
     setEditingSponsor(null);
   };
@@ -87,21 +75,6 @@ export const SponsorsManagement: React.FC<SponsorsManagementProps> = ({ onNaviga
     const confirmed = window.confirm(`Delete ${sponsor.name}?`);
     if (!confirmed) return;
     await removeSponsor(sponsor.id);
-    eventsService.updateModuleCount(
-      eventId,
-      'Sponsors',
-      Math.max(sponsors.length - 1, 0),
-      'Sponsor removed',
-      'users'
-    );
-  };
-
-  const copyLink = async (url: string) => {
-    try {
-      await navigator.clipboard.writeText(url);
-    } catch (error) {
-      console.error('Failed to copy', error);
-    }
   };
 
   return (
@@ -124,30 +97,16 @@ export const SponsorsManagement: React.FC<SponsorsManagementProps> = ({ onNaviga
             <p className="text-sm text-slate-500 dark:text-slate-400 max-w-2xl">
               Add sponsor logos, control visibility, and preview how they will appear on your event website.
             </p>
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-              <Badge className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-0">Reorder: Up/Down</Badge>
-              <Badge className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-0">Visibility toggle</Badge>
-              <Badge className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-0">Grayscale preview</Badge>
-            </div>
+            {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
           </div>
 
           <div className="flex flex-col gap-2 md:items-end">
-            <div className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl text-sm text-slate-700 dark:text-slate-200">
-              <LinkIcon className="w-4 h-4 text-indigo-600" />
-              <span className="truncate max-w-[220px]" title={publicUrl}>{publicUrl}</span>
-              <button onClick={() => copyLink(publicUrl)} className="p-1 hover:text-indigo-600" title="Copy link">
-                <Copy className="w-4 h-4" />
-              </button>
-              <a href={publicUrl} target="_blank" rel="noreferrer" className="p-1 hover:text-indigo-600" title="Open">
-                <ExternalLink className="w-4 h-4" />
-              </a>
-            </div>
             <Button
               onClick={handleAddClick}
               className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2 shadow-sm shadow-indigo-200 dark:shadow-none"
             >
               <Plus className="w-4 h-4" />
-              Add Sponsor
+              Add sponsor
             </Button>
           </div>
         </div>
@@ -184,7 +143,7 @@ export const SponsorsManagement: React.FC<SponsorsManagementProps> = ({ onNaviga
                 <span className="text-sm font-medium text-slate-800 dark:text-slate-200">Grayscale logos</span>
                 <span className="text-xs text-slate-500 dark:text-slate-400">Applies to public section</span>
               </div>
-              <Switch checked={grayscale} onCheckedChange={setGrayscale} />
+              <Switch checked={grayscaleLogos} onCheckedChange={updateGrayscaleLogos} />
             </div>
           </div>
 
@@ -223,7 +182,7 @@ export const SponsorsManagement: React.FC<SponsorsManagementProps> = ({ onNaviga
                   onMoveDown={() => reorderSponsor(sponsor.id, 'down')}
                   disableMoveUp={index === 0}
                   disableMoveDown={index === filteredSponsors.length - 1}
-                  grayscale={grayscale}
+                  grayscale={grayscaleLogos}
                 />
               ))}
             </div>
@@ -236,9 +195,9 @@ export const SponsorsManagement: React.FC<SponsorsManagementProps> = ({ onNaviga
               <p className="text-sm font-semibold text-slate-800 dark:text-slate-200">Public preview</p>
               <p className="text-xs text-slate-500 dark:text-slate-400">Below is how sponsors will appear on your event page</p>
             </div>
-            <span className="text-xs text-slate-500 dark:text-slate-400">{grayscale ? 'Grayscale on' : 'Full color'}</span>
+            <span className="text-xs text-slate-500 dark:text-slate-400">{grayscaleLogos ? 'Grayscale on' : 'Full color'}</span>
           </div>
-          <SponsorsSection sponsors={sponsors} grayscale={grayscale} />
+          <SponsorsSection sponsors={sponsors} grayscale={grayscaleLogos} />
         </div>
       </main>
 
@@ -250,6 +209,7 @@ export const SponsorsManagement: React.FC<SponsorsManagementProps> = ({ onNaviga
         }}
         onSave={handleSaveSponsor}
         initialData={editingSponsor}
+        eventId={eventId}
       />
     </div>
   );

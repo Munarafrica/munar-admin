@@ -20,6 +20,7 @@ export const config = {
   features: {
     // Set to true when backend is connected
     useMockData: import.meta.env.VITE_USE_MOCK_DATA !== 'false',
+    votingApiAvailable: import.meta.env.VITE_ENABLE_VOTING_API === 'true',
     enableAnalytics: import.meta.env.VITE_ENABLE_ANALYTICS === 'true',
   },
   

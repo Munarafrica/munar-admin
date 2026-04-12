@@ -357,6 +357,9 @@ export function SingleImageField({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [altTextDraft, setAltTextDraft] = useState(asset?.altText || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const typeHint = category === 'logo' || category === 'section' || category === 'custom-block'
+    ? 'JPG, PNG, WebP, SVG'
+    : 'JPG, PNG, WebP';
 
   useEffect(() => {
     setAltTextDraft(asset?.altText || '');
@@ -553,7 +556,7 @@ export function SingleImageField({
                   {placeholder}
                 </p>
                 <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                  Max {maxSizeMB}MB · JPG, PNG, WebP
+                  Max {maxSizeMB}MB · {typeHint}
                 </p>
               </>
             )}

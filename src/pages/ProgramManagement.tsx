@@ -9,6 +9,7 @@ import { ScheduleTab } from "../components/event-dashboard/program/ScheduleTab";
 import { eventsService } from "../services";
 import { useEventId } from "../lib/navigation";
 import { useProgram } from "../hooks/useProgram";
+import { useEvent } from "../contexts";
 import { toast } from 'sonner';
 
 interface ProgramManagementProps {
@@ -18,6 +19,7 @@ interface ProgramManagementProps {
 export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate }) => {
   const [activeTab, setActiveTab] = useState<'speakers' | 'schedule'>('speakers');
   const eventId = useEventId();
+  const { currentEvent } = useEvent();
 
   const {
     speakers,
@@ -32,7 +34,8 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
     createSession,
     updateSession,
     deleteSession,
-  } = useProgram({ eventId, autoFetch: !!eventId });
+    fetchSessions,
+  } = useProgram({ eventId, autoFetch: !!eventId, eventTimezone: currentEvent?.timezone });
 
   // --- Speaker Actions ---
   const handleAddSpeaker = async (newSpeaker: Partial<Speaker>) => {
@@ -40,6 +43,7 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
     const { id: _id, ...data } = newSpeaker as Speaker;
     const created = await createSpeaker({ categories: [], isFeatured: false, name: '', role: '', bio: '', ...data });
     if (!created) { toast.error('Failed to add speaker'); throw new Error('Failed'); }
+    await fetchSpeakers();
     toast.success(`Speaker "${created.name}" added`);
     eventsService.updateModuleCount(eventId, 'People & Speakers', speakers.length + 1, `Added speaker "${created.name}"`, 'mic');
   };
@@ -64,6 +68,7 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
     const { id: _id, ...data } = newSession as Session;
     const created = await createSession({ title: '', description: '', date: '', startTime: '', endTime: '', speakerIds: [], ...data });
     if (!created) { toast.error('Failed to add session'); throw new Error('Failed'); }
+    await fetchSessions();
     toast.success(`Session "${created.title}" added`);
     eventsService.updateModuleCount(eventId, 'Schedule & Agenda', sessions.length + 1, `Added session "${created.title}"`, 'calendar');
   };
@@ -153,6 +158,7 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
                             onAddSpeaker={handleAddSpeaker}
                             onEditSpeaker={handleEditSpeaker}
                             onDeleteSpeaker={handleDeleteSpeaker}
+                            onSearchSpeakers={fetchSpeakers}
                         />
                     )}
 
@@ -164,6 +170,8 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
                             onAddSession={handleAddSession}
                             onEditSession={handleEditSession}
                             onDeleteSession={handleDeleteSession}
+                            onSearchSessions={fetchSessions}
+                            onManageSpeakers={() => setActiveTab('speakers')}
                         />
                     )}
                 </div>

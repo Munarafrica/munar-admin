@@ -5,6 +5,7 @@ import { votingService } from '../../services';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { cn } from '../ui/utils';
+import { toast } from 'sonner';
 import {
   Award,
   Trophy,
@@ -72,12 +73,18 @@ export const VotingResultsTab: React.FC<VotingResultsTabProps> = ({
   };
 
   const handleExport = async (format: 'csv' | 'pdf') => {
+    if (!selectedCampaignId || !votingService.votingApiAvailable) {
+      toast.info('Voting result export is not available yet.');
+      return;
+    }
+
     try {
       await votingService.exportResults(eventId, selectedCampaignId, format);
       // In real app, this would trigger a download
-      alert(`Results exported as ${format.toUpperCase()}`);
+      toast.success(`Results exported as ${format.toUpperCase()}.`);
     } catch (error) {
       console.error('Failed to export results:', error);
+      toast.error('Failed to export results.');
     }
   };
 
@@ -190,11 +197,21 @@ export const VotingResultsTab: React.FC<VotingResultsTabProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <Button variant="outline" onClick={() => handleExport('csv')} className="gap-2">
+          <Button
+            variant="outline"
+            onClick={() => handleExport('csv')}
+            disabled={!selectedCampaignId || !votingService.votingApiAvailable}
+            className="gap-2"
+          >
             <Download className="w-4 h-4" />
             Export CSV
           </Button>
-          <Button variant="outline" onClick={() => handleExport('pdf')} className="gap-2">
+          <Button
+            variant="outline"
+            onClick={() => handleExport('pdf')}
+            disabled={!selectedCampaignId || !votingService.votingApiAvailable}
+            className="gap-2"
+          >
             <Download className="w-4 h-4" />
             Export PDF
           </Button>

@@ -66,6 +66,7 @@ export interface EventData {
   venueLocation?: string;
   categories?: string[];
   currency?: 'NGN' | 'GHS' | 'ZAR';
+  timezone?: string;
   status: EventStatus;
   phase: EventPhase;
 
@@ -163,10 +164,14 @@ export interface Session {
   date: string; // YYYY-MM-DD
   startTime: string; // HH:mm
   endTime: string; // HH:mm
+  startsAt?: string;
+  endsAt?: string;
   location?: string;
   track?: string; // e.g., 'Main Stage', 'Workshop Room A'
   trackColor?: string; // hex code
   speakerIds: string[];
+  status?: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
+  speakers?: Speaker[];
   capacity?: number;
 }
 

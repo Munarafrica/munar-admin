@@ -1,11 +1,13 @@
 // Program Hook - fetch and manage speakers & sessions
 import { useState, useEffect, useCallback } from 'react';
 import { programService } from '../services';
+import { SpeakerQuery, SessionQuery } from '../services/program.service';
 import { Speaker, Session } from '../components/event-dashboard/types';
 
 interface UseProgramOptions {
   eventId: string;
   autoFetch?: boolean;
+  eventTimezone?: string;
 }
 
 interface UseProgramReturn {
@@ -24,13 +26,13 @@ interface UseProgramReturn {
   error: string | null;
   
   // Speaker Actions
-  fetchSpeakers: () => Promise<void>;
+  fetchSpeakers: (params?: SpeakerQuery) => Promise<void>;
   createSpeaker: (data: Omit<Speaker, 'id'>) => Promise<Speaker | null>;
   updateSpeaker: (speakerId: string, data: Partial<Speaker>) => Promise<Speaker | null>;
   deleteSpeaker: (speakerId: string) => Promise<boolean>;
   
   // Session Actions
-  fetchSessions: (date?: string) => Promise<void>;
+  fetchSessions: (params?: SessionQuery) => Promise<void>;
   createSession: (data: Omit<Session, 'id'>) => Promise<Session | null>;
   updateSession: (sessionId: string, data: Partial<Session>) => Promise<Session | null>;
   deleteSession: (sessionId: string) => Promise<boolean>;
@@ -40,7 +42,7 @@ interface UseProgramReturn {
   fetchScheduleByDate: () => Promise<void>;
 }
 
-export function useProgram({ eventId, autoFetch = true }: UseProgramOptions): UseProgramReturn {
+export function useProgram({ eventId, autoFetch = true, eventTimezone }: UseProgramOptions): UseProgramReturn {
   // Speakers state
   const [speakers, setSpeakers] = useState<Speaker[]>([]);
   const [isLoadingSpeakers, setIsLoadingSpeakers] = useState(autoFetch);
@@ -60,12 +62,12 @@ export function useProgram({ eventId, autoFetch = true }: UseProgramOptions): Us
 
   // ========== SPEAKER METHODS ==========
   
-  const fetchSpeakers = useCallback(async () => {
+  const fetchSpeakers = useCallback(async (params?: SpeakerQuery) => {
     setIsLoadingSpeakers(true);
     setError(null);
     
     try {
-      const data = await programService.getSpeakers(eventId);
+      const data = await programService.getSpeakers(eventId, params);
       setSpeakers(data);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch speakers');
@@ -76,6 +78,7 @@ export function useProgram({ eventId, autoFetch = true }: UseProgramOptions): Us
 
   const createSpeaker = useCallback(async (data: Omit<Speaker, 'id'>): Promise<Speaker | null> => {
     try {
+      setError(null);
       const newSpeaker = await programService.createSpeaker(eventId, data);
       setSpeakers(prev => [...prev, newSpeaker]);
       return newSpeaker;
@@ -87,6 +90,7 @@ export function useProgram({ eventId, autoFetch = true }: UseProgramOptions): Us
 
   const updateSpeaker = useCallback(async (speakerId: string, data: Partial<Speaker>): Promise<Speaker | null> => {
     try {
+      setError(null);
       const updated = await programService.updateSpeaker(eventId, speakerId, data);
       setSpeakers(prev => prev.map(s => s.id === speakerId ? updated : s));
       return updated;
@@ -98,6 +102,7 @@ export function useProgram({ eventId, autoFetch = true }: UseProgramOptions): Us
 
   const deleteSpeaker = useCallback(async (speakerId: string): Promise<boolean> => {
     try {
+      setError(null);
       await programService.deleteSpeaker(eventId, speakerId);
       setSpeakers(prev => prev.filter(s => s.id !== speakerId));
       return true;
@@ -109,15 +114,17 @@ export function useProgram({ eventId, autoFetch = true }: UseProgramOptions): Us
 
   // ========== SESSION METHODS ==========
   
-  const fetchSessions = useCallback(async (date?: string) => {
+  const fetchSessions = useCallback(async (params?: SessionQuery) => {
     setIsLoadingSessions(true);
     setError(null);
     
     try {
-      const [sessionsData, tracksData] = await Promise.all([
-        programService.getSessions(eventId, date),
-        programService.getTracks(eventId),
-      ]);
+      const sessionsData = await programService.getSessions(eventId, params);
+      const tracksData = Array.from(new Map(
+        sessionsData
+          .filter(session => session.track)
+          .map(session => [session.track!, session.trackColor || '#6366f1'] as const)
+      ).entries()).map(([name, color]) => ({ name, color }));
       setSessions(sessionsData);
       setTracks(tracksData);
     } catch (err) {
@@ -129,28 +136,31 @@ export function useProgram({ eventId, autoFetch = true }: UseProgramOptions): Us
 
   const createSession = useCallback(async (data: Omit<Session, 'id'>): Promise<Session | null> => {
     try {
-      const newSession = await programService.createSession(eventId, data);
+      setError(null);
+      const newSession = await programService.createSession(eventId, data, eventTimezone);
       setSessions(prev => [...prev, newSession]);
       return newSession;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to create session');
       return null;
     }
-  }, [eventId]);
+  }, [eventId, eventTimezone]);
 
   const updateSession = useCallback(async (sessionId: string, data: Partial<Session>): Promise<Session | null> => {
     try {
-      const updated = await programService.updateSession(eventId, sessionId, data);
+      setError(null);
+      const updated = await programService.updateSession(eventId, sessionId, data, eventTimezone);
       setSessions(prev => prev.map(s => s.id === sessionId ? updated : s));
       return updated;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to update session');
       return null;
     }
-  }, [eventId]);
+  }, [eventId, eventTimezone]);
 
   const deleteSession = useCallback(async (sessionId: string): Promise<boolean> => {
     try {
+      setError(null);
       await programService.deleteSession(eventId, sessionId);
       setSessions(prev => prev.filter(s => s.id !== sessionId));
       return true;

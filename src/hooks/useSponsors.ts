@@ -9,6 +9,7 @@ interface UseSponsorsOptions {
 
 interface UseSponsorsReturn {
   sponsors: Sponsor[];
+  grayscaleLogos: boolean;
   isLoading: boolean;
   error: string | null;
   fetchSponsors: () => Promise<void>;
@@ -17,10 +18,12 @@ interface UseSponsorsReturn {
   removeSponsor: (sponsorId: string) => Promise<boolean>;
   reorderSponsor: (sponsorId: string, direction: ReorderDirection) => Promise<Sponsor[] | null>;
   toggleVisibility: (sponsorId: string, visible: boolean) => Promise<Sponsor | null>;
+  updateGrayscaleLogos: (grayscaleLogos: boolean) => Promise<boolean>;
 }
 
 export function useSponsors({ eventId, autoFetch = true }: UseSponsorsOptions): UseSponsorsReturn {
   const [sponsors, setSponsors] = useState<Sponsor[]>([]);
+  const [grayscaleLogos, setGrayscaleLogos] = useState(false);
   const [isLoading, setIsLoading] = useState<boolean>(autoFetch);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,8 +31,9 @@ export function useSponsors({ eventId, autoFetch = true }: UseSponsorsOptions): 
     setIsLoading(true);
     setError(null);
     try {
-      const data = await sponsorsService.getSponsors(eventId);
-      setSponsors(data);
+      const data = await sponsorsService.getSponsorSettings(eventId);
+      setSponsors(data.sponsors);
+      setGrayscaleLogos(data.grayscaleLogos);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load sponsors');
     } finally {
@@ -107,6 +111,24 @@ export function useSponsors({ eventId, autoFetch = true }: UseSponsorsOptions): 
     [eventId],
   );
 
+  const updateGrayscaleLogos = useCallback(
+    async (nextValue: boolean): Promise<boolean> => {
+      const previousValue = grayscaleLogos;
+      setGrayscaleLogos(nextValue);
+      try {
+        const updated = await sponsorsService.updateGrayscaleLogos(eventId, nextValue);
+        setGrayscaleLogos(updated.grayscaleLogos);
+        setSponsors(updated.sponsors);
+        return true;
+      } catch (err) {
+        setGrayscaleLogos(previousValue);
+        setError(err instanceof Error ? err.message : 'Failed to update grayscale setting');
+        return false;
+      }
+    },
+    [eventId, grayscaleLogos],
+  );
+
   useEffect(() => {
     if (autoFetch && eventId) {
       fetchSponsors();
@@ -115,6 +137,7 @@ export function useSponsors({ eventId, autoFetch = true }: UseSponsorsOptions): 
 
   return {
     sponsors,
+    grayscaleLogos,
     isLoading,
     error,
     fetchSponsors,
@@ -123,5 +146,6 @@ export function useSponsors({ eventId, autoFetch = true }: UseSponsorsOptions): 
     removeSponsor,
     reorderSponsor,
     toggleVisibility,
+    updateGrayscaleLogos,
   };
 }

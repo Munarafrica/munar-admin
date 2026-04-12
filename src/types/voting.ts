@@ -1,7 +1,7 @@
 // Voting Module Types
 
 // ============ Enums ============
-export type CampaignStatus = 'draft' | 'published' | 'active' | 'paused' | 'ended' | 'archived';
+export type CampaignStatus = 'draft' | 'published' | 'scheduled' | 'active' | 'paused' | 'ended' | 'archived';
 export type VotingMode = 'free' | 'paid';
 export type EligibilityType = 'open' | 'authenticated' | 'ticket-holders' | 'vip' | 'invited';
 export type TransparencyMode = 'live' | 'hidden' | 'percentage-only' | 'after-close';
@@ -180,6 +180,14 @@ export interface VotingCampaign {
   createdBy: string;
 }
 
+export interface VotingSummary {
+  totalVotes: number;
+  revenueMinor: number;
+  currency: string;
+  contestants: number;
+  activeCampaigns: number;
+}
+
 // ============ Vote ============
 export interface Vote {
   id: string;
@@ -264,6 +272,27 @@ export interface ContestantResult {
   rank: number;
   
   revenue?: number; // If paid voting
+}
+
+export interface VotingResultCategory {
+  id: string;
+  name: string;
+  totalVotes: number;
+  contestants: Array<{
+    id: string;
+    name: string;
+    imageUrl: string | null;
+    votes: number;
+    revenueMinor: number;
+    rank: number;
+  }>;
+}
+
+export interface VotingResults {
+  campaignId: string;
+  categories: VotingResultCategory[];
+  totalVotes: number;
+  totalRevenueMinor: number;
 }
 
 // ============ Settings ============

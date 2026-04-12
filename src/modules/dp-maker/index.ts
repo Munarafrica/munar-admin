@@ -5,3 +5,12 @@
 
 export { DPMakerAdmin } from '../../pages/DPMakerAdmin';
 export { DPMakerPublic } from '../../pages/DPMakerPublic';
+export { dpCoverMakerService } from './service';
+export type {
+  DpCoverMakerConfig,
+  DpCoverMakerFrameAsset,
+  DpCoverMakerShape,
+  DpCoverMakerTextAlign,
+  DpCoverMakerVariant,
+  DpCoverMakerVariantKey,
+} from './types';

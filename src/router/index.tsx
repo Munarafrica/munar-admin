@@ -100,6 +100,15 @@ export const router = createBrowserRouter([
       { path: '/settings', element: <RequireAuth><WithNav Component={Settings} /></RequireAuth> },
       { path: '/checkout/tickets/callback', element: <TicketCheckoutCallback /> },
 
+      {
+        path: '/events/:eventSlug/dp',
+        element: (
+          <PublicLayout>
+            <WithNav Component={DPMakerPublic} />
+          </PublicLayout>
+        ),
+      },
+
       // ── Event Admin Routes ─────
       {
         path: '/events/:eventId',
@@ -184,6 +193,14 @@ export const router = createBrowserRouter([
           },
           {
             path: 'dp-maker',
+            element: (
+              <ModuleGuard moduleType="dp-maker">
+                <WithNav Component={DPMakerPublic} />
+              </ModuleGuard>
+            ),
+          },
+          {
+            path: 'dp',
             element: (
               <ModuleGuard moduleType="dp-maker">
                 <WithNav Component={DPMakerPublic} />

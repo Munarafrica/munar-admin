@@ -18,7 +18,9 @@ export const SponsorsSection: React.FC<SponsorsSectionProps> = ({
   grayscale = false,
   className,
 }) => {
-  const visibleSponsors = sponsors.filter((sponsor) => sponsor.visible);
+  const visibleSponsors = sponsors
+    .filter((sponsor) => sponsor.visible)
+    .sort((a, b) => a.order - b.order);
 
   return (
     <section className={cn('space-y-4', className)}>

@@ -9,7 +9,6 @@ import { Lock, EyeOff, Eye } from 'lucide-react';
 import { useEvent } from '../../contexts';
 import { websiteService } from '../../services/website.service';
 import { programService } from '../../services/program.service';
-import { getSponsors } from '../../services/sponsors.service';
 import {
   WebsiteConfig,
   DEFAULT_WEBSITE_CONFIG,
@@ -62,6 +61,28 @@ function extractSections(sectionsJson?: Record<string, unknown> | null): Website
     .filter((section): section is WebsiteConfig['sections'][number] => !!section);
 
   return normalized.length ? normalized : null;
+}
+
+function extractSponsors(config: WebsiteConfig, eventId: string): Sponsor[] {
+  const sponsorsSettings = config.sponsors;
+  if (!sponsorsSettings?.sponsors?.length) return [];
+
+  return sponsorsSettings.sponsors
+    .filter((sponsor) => sponsor.isVisible)
+    .map((sponsor) => ({
+      id: sponsor.id,
+      eventId,
+      name: sponsor.name,
+      logo: sponsor.logo,
+      logoUrl: sponsor.logo.url,
+      websiteUrl: sponsor.websiteUrl,
+      description: sponsor.description,
+      visible: sponsor.isVisible,
+      order: sponsor.sortOrder,
+      createdAt: sponsor.createdAt,
+      updatedAt: sponsor.updatedAt,
+    }))
+    .sort((a, b) => a.order - b.order);
 }
 
 // ── Access Control Gates ────────────────────────────────────────────────────
@@ -232,19 +253,22 @@ export function EventWebsitePublic() {
     };
   }, [currentEvent?.id, eventSlug, isPreviewMode]);
 
-  // Load speakers, sessions, sponsors when event is available
+  // Load module data when event is available. Sponsors come from website settings.
   useEffect(() => {
     if (!currentEvent) return;
     Promise.all([
       programService.getSpeakers(currentEvent.id).catch(() => [] as Speaker[]),
       programService.getSessions(currentEvent.id).catch(() => [] as Session[]),
-      getSponsors(currentEvent.id).catch(() => [] as Sponsor[]),
-    ]).then(([sp, se, spon]) => {
+    ]).then(([sp, se]) => {
       setSpeakers(sp);
       setSessions(se);
-      setSponsors(spon.filter((s) => s.visible));
     });
   }, [currentEvent?.id]);
+
+  useEffect(() => {
+    if (!currentEvent) return;
+    setSponsors(extractSponsors(config, currentEvent.id));
+  }, [config.sponsors, currentEvent?.id]);
 
   // In preview mode: listen for postMessage config updates (config + selectedSection)
   useEffect(() => {
@@ -398,6 +422,7 @@ export function EventWebsitePublic() {
     speakers,
     sessions,
     sponsors,
+    sponsorsGrayscale: config.sponsors?.grayscaleLogos ?? false,
     onSectionClick: isPreviewMode ? handleSectionClick : undefined,
     selectedSection: isPreviewMode ? selectedSection : null,
     isPreviewMode,

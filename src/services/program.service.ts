@@ -5,20 +5,229 @@ import { ApiResponse, MutationResponse, UploadResponse } from '../types/api';
 import { Speaker, Session } from '../components/event-dashboard/types';
 import { delay, mockSpeakers, mockSessions, generateId } from './mock/data';
 
-class ProgramService {
-  // ========== SPEAKERS ==========
-  
-  async getSpeakers(eventId: string): Promise<Speaker[]> {
-    if (config.features.useMockData) {
-      await delay(400);
-      return mockSpeakers;
-    }
+export interface SpeakerQuery {
+  search?: string;
+  isFeatured?: boolean;
+}
 
-    const response = await apiClient.get<ApiResponse<Speaker[]>>(`/events/${eventId}/speakers`);
-    return response.data;
+export interface SessionQuery {
+  search?: string;
+  dateFrom?: string;
+  dateTo?: string;
+  track?: string;
+  status?: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
+}
+
+type BackendSpeaker = {
+  id: string;
+  eventId: string;
+  fullName: string;
+  jobTitle: string | null;
+  organization: string | null;
+  bio: string | null;
+  profilePhotoUrl: string | null;
+  linkedinUrl: string | null;
+  twitterUrl: string | null;
+  websiteUrl: string | null;
+  isFeatured: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type BackendSessionSpeaker = BackendSpeaker & {
+  sessionRole: string | null;
+  sessionSortOrder: number;
+};
+
+type BackendSession = {
+  id: string;
+  eventId: string;
+  title: string;
+  description: string | null;
+  startsAt: string;
+  endsAt: string;
+  location: string | null;
+  track: string | null;
+  status: 'DRAFT' | 'PUBLISHED' | 'CANCELLED';
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  speakers: BackendSessionSpeaker[];
+};
+
+const unwrap = <T>(response: ApiResponse<T> | T): T => {
+  if (response && typeof response === 'object' && 'data' in response) {
+    return (response as ApiResponse<T>).data;
   }
 
-  async getSpeaker(eventId: string, speakerId: string): Promise<Speaker> {
+  return response as T;
+};
+
+const toDateInput = (iso?: string) => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const toTimeInput = (iso?: string) => {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
+const getTimeZoneOffsetMs = (date: Date, timeZone: string) => {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(date);
+
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  const asUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second),
+  );
+
+  return asUtc - date.getTime();
+};
+
+const combineDateTime = (date: string, time: string, timeZone?: string): string => {
+  if (!date || !time) return '';
+
+  if (!timeZone) {
+    return new Date(`${date}T${time}`).toISOString();
+  }
+
+  try {
+    const utcGuess = new Date(`${date}T${time}:00.000Z`);
+    const offset = getTimeZoneOffsetMs(utcGuess, timeZone);
+    return new Date(utcGuess.getTime() - offset).toISOString();
+  } catch {
+    return new Date(`${date}T${time}`).toISOString();
+  }
+};
+
+const normalizeSpeaker = (speaker: BackendSpeaker | Speaker): Speaker => {
+  if ('fullName' in speaker) {
+    return {
+      id: speaker.id,
+      name: speaker.fullName,
+      role: speaker.jobTitle ?? '',
+      organization: speaker.organization ?? '',
+      bio: speaker.bio ?? '',
+      imageUrl: speaker.profilePhotoUrl ?? undefined,
+      linkedInUrl: speaker.linkedinUrl ?? undefined,
+      twitterUrl: speaker.twitterUrl ?? undefined,
+      websiteUrl: speaker.websiteUrl ?? undefined,
+      categories: [],
+      isFeatured: speaker.isFeatured,
+    };
+  }
+
+  return {
+    ...speaker,
+    role: speaker.role ?? '',
+    bio: speaker.bio ?? '',
+    categories: speaker.categories ?? [],
+    isFeatured: speaker.isFeatured ?? false,
+  };
+};
+
+const normalizeSession = (session: BackendSession | Session): Session => {
+  if ('startsAt' in session) {
+    return {
+      id: session.id,
+      title: session.title,
+      description: session.description ?? '',
+      date: toDateInput(session.startsAt),
+      startTime: toTimeInput(session.startsAt),
+      endTime: toTimeInput(session.endsAt),
+      startsAt: session.startsAt,
+      endsAt: session.endsAt,
+      location: session.location ?? '',
+      track: session.track ?? 'General',
+      trackColor: '#6366f1',
+      speakerIds: session.speakers?.map(speaker => speaker.id) ?? [],
+      status: session.status,
+      speakers: session.speakers?.map(normalizeSpeaker) ?? [],
+    };
+  }
+
+  return {
+    ...session,
+    description: session.description ?? '',
+    track: session.track ?? 'General',
+    trackColor: session.trackColor ?? '#6366f1',
+    speakerIds: session.speakerIds ?? [],
+    status: session.status ?? 'DRAFT',
+  };
+};
+
+const toSpeakerPayload = (data: Partial<Speaker>) => ({
+  fullName: data.name?.trim() ?? '',
+  jobTitle: data.role?.trim() || null,
+  organization: data.organization?.trim() || null,
+  bio: data.bio?.trim() || null,
+  profilePhotoUrl: data.imageUrl || null,
+  linkedinUrl: data.linkedInUrl || null,
+  twitterUrl: data.twitterUrl || null,
+  websiteUrl: data.websiteUrl || null,
+  isFeatured: data.isFeatured ?? false,
+});
+
+const toSessionPayload = (data: Partial<Session>, timeZone?: string) => {
+  const startsAt = data.startsAt || combineDateTime(data.date ?? '', data.startTime ?? '', timeZone);
+  const endsAt = data.endsAt || combineDateTime(data.date ?? '', data.endTime ?? '', timeZone);
+
+  return {
+    title: data.title?.trim() ?? '',
+    description: data.description?.trim() || null,
+    startsAt,
+    endsAt,
+    location: data.location?.trim() || null,
+    track: data.track?.trim() || 'General',
+    status: data.status ?? 'DRAFT',
+    speakerIds: data.speakerIds ?? [],
+  };
+};
+
+class ProgramService {
+  // ========== SPEAKERS ==========
+
+  async getSpeakers(eventId: string, params?: SpeakerQuery): Promise<Speaker[]> {
+    if (config.features.useMockData) {
+      await delay(400);
+      return mockSpeakers
+        .filter(speaker => !params?.search || `${speaker.name} ${speaker.role} ${speaker.organization ?? ''}`.toLowerCase().includes(params.search.toLowerCase()))
+        .filter(speaker => params?.isFeatured === undefined || speaker.isFeatured === params.isFeatured);
+    }
+
+    const response = await apiClient.get<ApiResponse<BackendSpeaker[]> | BackendSpeaker[]>(`/events/${eventId}/speakers`, {
+      params,
+    });
+    return unwrap(response).map(normalizeSpeaker);
+  }
+
+  async getSpeaker(_eventId: string, speakerId: string): Promise<Speaker> {
     if (config.features.useMockData) {
       await delay(300);
       const speaker = mockSpeakers.find(s => s.id === speakerId);
@@ -26,53 +235,54 @@ class ProgramService {
       return speaker;
     }
 
-    const response = await apiClient.get<ApiResponse<Speaker>>(`/events/${eventId}/speakers/${speakerId}`);
-    return response.data;
+    const response = await apiClient.get<ApiResponse<BackendSpeaker> | BackendSpeaker>(`/speakers/${speakerId}`);
+    return normalizeSpeaker(unwrap(response));
   }
 
   async createSpeaker(eventId: string, data: Omit<Speaker, 'id'>): Promise<Speaker> {
     if (config.features.useMockData) {
       await delay(500);
-      
+
       const newSpeaker: Speaker = {
         id: generateId('spk'),
         ...data,
       };
-      
+
       mockSpeakers.push(newSpeaker);
       return newSpeaker;
     }
 
-    const response = await apiClient.post<ApiResponse<Speaker>>(`/events/${eventId}/speakers`, data);
-    return response.data;
+    const response = await apiClient.post<ApiResponse<BackendSpeaker> | BackendSpeaker>(`/events/${eventId}/speakers`, toSpeakerPayload(data));
+    return normalizeSpeaker(unwrap(response));
   }
 
-  async updateSpeaker(eventId: string, speakerId: string, data: Partial<Speaker>): Promise<Speaker> {
+  async updateSpeaker(_eventId: string, speakerId: string, data: Partial<Speaker>): Promise<Speaker> {
     if (config.features.useMockData) {
       await delay(400);
-      
+
       const index = mockSpeakers.findIndex(s => s.id === speakerId);
       if (index === -1) throw new Error('Speaker not found');
-      
+
       mockSpeakers[index] = { ...mockSpeakers[index], ...data };
       return mockSpeakers[index];
     }
 
-    const response = await apiClient.patch<ApiResponse<Speaker>>(`/events/${eventId}/speakers/${speakerId}`, data);
-    return response.data;
+    const response = await apiClient.patch<ApiResponse<BackendSpeaker> | BackendSpeaker>(`/speakers/${speakerId}`, toSpeakerPayload(data));
+    return normalizeSpeaker(unwrap(response));
   }
 
-  async deleteSpeaker(eventId: string, speakerId: string): Promise<MutationResponse> {
+  async deleteSpeaker(_eventId: string, speakerId: string): Promise<MutationResponse> {
     if (config.features.useMockData) {
       await delay(400);
-      
+
       const index = mockSpeakers.findIndex(s => s.id === speakerId);
       if (index !== -1) mockSpeakers.splice(index, 1);
-      
+
       return { success: true, message: 'Speaker deleted successfully' };
     }
 
-    return apiClient.delete<MutationResponse>(`/events/${eventId}/speakers/${speakerId}`);
+    await apiClient.delete(`/speakers/${speakerId}`);
+    return { success: true, message: 'Speaker deleted successfully' };
   }
 
   async uploadSpeakerImage(eventId: string, speakerId: string, file: File): Promise<UploadResponse> {
@@ -90,24 +300,27 @@ class ProgramService {
   }
 
   // ========== SESSIONS ==========
-  
-  async getSessions(eventId: string, date?: string): Promise<Session[]> {
+
+  async getSessions(eventId: string, params?: SessionQuery): Promise<Session[]> {
     if (config.features.useMockData) {
       await delay(400);
-      
-      if (date) {
-        return mockSessions.filter(s => s.date === date);
-      }
-      return mockSessions;
+
+      return mockSessions
+        .filter(session => !params?.search || `${session.title} ${session.description} ${session.location ?? ''} ${session.track ?? ''}`.toLowerCase().includes(params.search.toLowerCase()))
+        .filter(session => {
+          if (!params?.dateFrom || !params?.dateTo) return true;
+          const startsAt = combineDateTime(session.date, session.startTime);
+          return startsAt >= params.dateFrom && startsAt <= params.dateTo;
+        });
     }
 
-    const response = await apiClient.get<ApiResponse<Session[]>>(`/events/${eventId}/sessions`, {
-      params: date ? { date } : undefined,
+    const response = await apiClient.get<ApiResponse<BackendSession[]> | BackendSession[]>(`/events/${eventId}/sessions`, {
+      params,
     });
-    return response.data;
+    return unwrap(response).map(normalizeSession);
   }
 
-  async getSession(eventId: string, sessionId: string): Promise<Session> {
+  async getSession(_eventId: string, sessionId: string): Promise<Session> {
     if (config.features.useMockData) {
       await delay(300);
       const session = mockSessions.find(s => s.id === sessionId);
@@ -115,78 +328,73 @@ class ProgramService {
       return session;
     }
 
-    const response = await apiClient.get<ApiResponse<Session>>(`/events/${eventId}/sessions/${sessionId}`);
-    return response.data;
+    const response = await apiClient.get<ApiResponse<BackendSession> | BackendSession>(`/sessions/${sessionId}`);
+    return normalizeSession(unwrap(response));
   }
 
-  async createSession(eventId: string, data: Omit<Session, 'id'>): Promise<Session> {
+  async createSession(eventId: string, data: Omit<Session, 'id'>, timeZone?: string): Promise<Session> {
     if (config.features.useMockData) {
       await delay(500);
-      
+
       const newSession: Session = {
         id: generateId('ses'),
         ...data,
       };
-      
+
       mockSessions.push(newSession);
       return newSession;
     }
 
-    const response = await apiClient.post<ApiResponse<Session>>(`/events/${eventId}/sessions`, data);
-    return response.data;
+    const response = await apiClient.post<ApiResponse<BackendSession> | BackendSession>(`/events/${eventId}/sessions`, toSessionPayload(data, timeZone));
+    return normalizeSession(unwrap(response));
   }
 
-  async updateSession(eventId: string, sessionId: string, data: Partial<Session>): Promise<Session> {
+  async updateSession(_eventId: string, sessionId: string, data: Partial<Session>, timeZone?: string): Promise<Session> {
     if (config.features.useMockData) {
       await delay(400);
-      
+
       const index = mockSessions.findIndex(s => s.id === sessionId);
       if (index === -1) throw new Error('Session not found');
-      
+
       mockSessions[index] = { ...mockSessions[index], ...data };
       return mockSessions[index];
     }
 
-    const response = await apiClient.patch<ApiResponse<Session>>(`/events/${eventId}/sessions/${sessionId}`, data);
-    return response.data;
+    const response = await apiClient.patch<ApiResponse<BackendSession> | BackendSession>(`/sessions/${sessionId}`, toSessionPayload(data, timeZone));
+    return normalizeSession(unwrap(response));
   }
 
-  async deleteSession(eventId: string, sessionId: string): Promise<MutationResponse> {
+  async deleteSession(_eventId: string, sessionId: string): Promise<MutationResponse> {
     if (config.features.useMockData) {
       await delay(400);
-      
+
       const index = mockSessions.findIndex(s => s.id === sessionId);
       if (index !== -1) mockSessions.splice(index, 1);
-      
+
       return { success: true, message: 'Session deleted successfully' };
     }
 
-    return apiClient.delete<MutationResponse>(`/events/${eventId}/sessions/${sessionId}`);
+    await apiClient.delete(`/sessions/${sessionId}`);
+    return { success: true, message: 'Session deleted successfully' };
   }
 
   // Get all unique tracks for an event
   async getTracks(eventId: string): Promise<Array<{ name: string; color: string }>> {
-    if (config.features.useMockData) {
-      await delay(200);
-      
-      const tracks = new Map<string, string>();
-      mockSessions.forEach(s => {
-        if (s.track) {
-          tracks.set(s.track, s.trackColor || '#8b5cf6');
-        }
-      });
-      
-      return Array.from(tracks.entries()).map(([name, color]) => ({ name, color }));
-    }
+    const sessions = await this.getSessions(eventId);
+    const tracks = new Map<string, string>();
+    sessions.forEach(session => {
+      if (session.track) {
+        tracks.set(session.track, session.trackColor || '#6366f1');
+      }
+    });
 
-    const response = await apiClient.get<ApiResponse<Array<{ name: string; color: string }>>>(`/events/${eventId}/tracks`);
-    return response.data;
+    return Array.from(tracks.entries()).map(([name, color]) => ({ name, color }));
   }
 
   // Get schedule by date (grouped sessions)
   async getScheduleByDate(eventId: string): Promise<Record<string, Session[]>> {
     const sessions = await this.getSessions(eventId);
-    
+
     const grouped: Record<string, Session[]> = {};
     sessions.forEach(session => {
       if (!grouped[session.date]) {
@@ -194,12 +402,12 @@ class ProgramService {
       }
       grouped[session.date].push(session);
     });
-    
+
     // Sort sessions within each date by start time
     Object.values(grouped).forEach(daySessions => {
       daySessions.sort((a, b) => a.startTime.localeCompare(b.startTime));
     });
-    
+
     return grouped;
   }
 }

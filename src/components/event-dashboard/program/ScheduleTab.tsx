@@ -1,7 +1,7 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Session, Speaker } from '../types';
 import { Button } from '../../ui/button';
-import { Plus, Search, Calendar, MapPin, Users, Edit2, Trash2, Clock, MoreHorizontal, ChevronRight, Loader2 } from 'lucide-react';
+import { Plus, Search, Calendar, MapPin, Users, Edit2, Trash2, Loader2 } from 'lucide-react';
 import { SessionModal } from './SessionModal';
 import { cn } from '../../ui/utils';
 
@@ -12,9 +12,11 @@ interface ScheduleTabProps {
   onAddSession: (session: Partial<Session>) => void | Promise<void>;
   onEditSession: (session: Session) => void | Promise<void>;
   onDeleteSession: (id: string) => void;
+  onSearchSessions?: (params?: { search?: string; dateFrom?: string; dateTo?: string }) => void | Promise<void>;
+  onManageSpeakers?: () => void;
 }
 
-export const ScheduleTab: React.FC<ScheduleTabProps> = ({ sessions, speakers, isLoading, onAddSession, onEditSession, onDeleteSession }) => {
+export const ScheduleTab: React.FC<ScheduleTabProps> = ({ sessions, speakers, isLoading, onAddSession, onEditSession, onDeleteSession, onSearchSessions, onManageSpeakers }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSession, setEditingSession] = useState<Session | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState('');
@@ -38,15 +40,35 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ sessions, speakers, is
     }
   };
 
+  useEffect(() => {
+    if (!onSearchSessions) return;
+
+    const timeout = window.setTimeout(() => {
+      const dateParams = selectedDate === 'all'
+        ? {}
+        : {
+          dateFrom: new Date(`${selectedDate}T00:00:00.000`).toISOString(),
+          dateTo: new Date(`${selectedDate}T23:59:59.999`).toISOString(),
+        };
+
+      onSearchSessions({
+        search: searchQuery.trim() || undefined,
+        ...dateParams,
+      });
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [onSearchSessions, searchQuery, selectedDate]);
+
   // Get unique dates
   const dates = Array.from(new Set(sessions.map(s => s.date))).sort();
 
-  const filteredSessions = sessions.filter(s => {
+  const filteredSessions = (onSearchSessions ? sessions : sessions.filter(s => {
     const matchesSearch = s.title.toLowerCase().includes(searchQuery.toLowerCase()) || 
                           s.description.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesDate = selectedDate === 'all' || s.date === selectedDate;
     return matchesSearch && matchesDate;
-  }).sort((a, b) => a.startTime.localeCompare(b.startTime));
+  })).sort((a, b) => a.startTime.localeCompare(b.startTime));
 
   // Group by date if 'all' is selected
   const groupedSessions = selectedDate === 'all' 
@@ -132,7 +154,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ sessions, speakers, is
              <div className="flex items-center justify-center py-16">
                 <Loader2 className="w-7 h-7 animate-spin text-indigo-500" />
              </div>
-        ) : Object.keys(groupedSessions).length === 0 ? (
+        ) : filteredSessions.length === 0 ? (
              <div className="flex flex-col items-center justify-center py-16 border-2 border-dashed border-slate-200 dark:border-slate-800 rounded-xl text-center">
                 <div className="w-16 h-16 bg-slate-50 dark:bg-slate-800 rounded-full flex items-center justify-center mb-4">
                     <Calendar className="w-8 h-8 text-slate-300 dark:text-slate-500" />
@@ -239,6 +261,7 @@ export const ScheduleTab: React.FC<ScheduleTabProps> = ({ sessions, speakers, is
          onSave={handleSave}
          session={editingSession}
          speakers={speakers}
+         onManageSpeakers={onManageSpeakers}
       />
     </div>
   );

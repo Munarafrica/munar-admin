@@ -92,6 +92,7 @@ interface PulseTemplateProps {
   speakers?: Speaker[];
   sessions?: Session[];
   sponsors?: Sponsor[];
+  sponsorsGrayscale?: boolean;
   onSectionClick?: (id: SectionId) => void;
   selectedSection?: SectionId | null;
   isPreviewMode?: boolean;
@@ -104,7 +105,7 @@ interface PulseTemplateProps {
 
 export function PulseTemplate({
   event, config, speakers = [], sessions = [], sponsors = [],
-  onSectionClick, selectedSection, isPreviewMode, activeBreakpoint, onSectionOverrideUpdate, onSectionReorder,
+  sponsorsGrayscale = false, onSectionClick, selectedSection, isPreviewMode, activeBreakpoint, onSectionOverrideUpdate, onSectionReorder,
 }: PulseTemplateProps) {
   const { eventSlug } = useParams<{ eventSlug: string }>();
   const [searchParams] = useSearchParams();
@@ -704,7 +705,7 @@ export function PulseTemplate({
               <a key={sp.id} href={sp.websiteUrl || '#'} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}
                 className="flex items-center justify-center p-5 hover:scale-105 transition-all"
                 style={{ borderRadius: getRadius(theme.borderRadius), border: `1px solid ${theme.primaryColor}33`, backgroundColor: `${theme.primaryColor}0d` }} title={sp.name}>
-                {sp.logoUrl ? <img src={sp.logoUrl} alt={sp.name} className="h-10 max-w-[140px] object-contain filter brightness-150 contrast-75" /> : <span className="text-sm font-black" style={{ color: theme.primaryColor }}>{sp.name}</span>}
+                {sp.logoUrl ? <img src={sp.logoUrl} alt={sp.name} className={cn('h-10 max-w-[140px] object-contain filter brightness-150 contrast-75', sponsorsGrayscale && 'grayscale')} /> : <span className="text-sm font-black" style={{ color: theme.primaryColor }}>{sp.name}</span>}
               </a>
             ))}
           </div>

@@ -11,9 +11,10 @@ interface SessionModalProps {
   onSave: (session: Partial<Session>) => void | Promise<void>;
   session?: Session;
   speakers: Speaker[];
+  onManageSpeakers?: () => void;
 }
 
-export const SessionModal: React.FC<SessionModalProps> = ({ isOpen, onClose, onSave, session, speakers }) => {
+export const SessionModal: React.FC<SessionModalProps> = ({ isOpen, onClose, onSave, session, speakers, onManageSpeakers }) => {
   const [formData, setFormData] = useState<Partial<Session>>({
     title: '',
     description: '',
@@ -81,6 +82,16 @@ export const SessionModal: React.FC<SessionModalProps> = ({ isOpen, onClose, onS
     } else {
       setFormData({ ...formData, speakerIds: [...currentIds, speakerId] });
     }
+  };
+
+  const handleManageSpeakers = () => {
+    if (speakers.length === 0 && onManageSpeakers) {
+      onClose();
+      onManageSpeakers();
+      return;
+    }
+
+    setIsSelectingSpeakers(!isSelectingSpeakers);
   };
 
   const selectedSpeakers = speakers.filter(s => formData.speakerIds?.includes(s.id));
@@ -200,10 +211,10 @@ export const SessionModal: React.FC<SessionModalProps> = ({ isOpen, onClose, onS
                     <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Speakers</label>
                     <button 
                         type="button"
-                        onClick={() => setIsSelectingSpeakers(!isSelectingSpeakers)}
+                        onClick={handleManageSpeakers}
                         className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline font-medium"
                     >
-                        {isSelectingSpeakers ? 'Done Selecting' : 'Manage Speakers'}
+                        {isSelectingSpeakers ? 'Done Selecting' : speakers.length === 0 ? 'Add Speakers' : 'Manage Speakers'}
                     </button>
                 </div>
                 

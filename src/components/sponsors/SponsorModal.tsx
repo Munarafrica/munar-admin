@@ -2,20 +2,23 @@ import React, { useEffect, useState } from 'react';
 import { Input } from '../ui/input';
 import { Textarea } from '../ui/textarea';
 import { Switch } from '../ui/switch';
-import { ImageUploader } from '../ui/ImageUploader';
 import { Button } from '../ui/button';
 import { Sponsor, CreateSponsorRequest } from '../../types/sponsors';
+import { SingleImageField } from '../website-builder/SingleImageField';
+import { WebsiteAssetRef } from '../../modules/website/types';
 
 interface SponsorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   onSave: (data: CreateSponsorRequest) => Promise<void> | void;
   initialData?: Sponsor | null;
+  eventId?: string;
 }
 
-export const SponsorModal: React.FC<SponsorModalProps> = ({ open, onOpenChange, onSave, initialData }) => {
+export const SponsorModal: React.FC<SponsorModalProps> = ({ open, onOpenChange, onSave, initialData, eventId }) => {
   const [name, setName] = useState('');
   const [logoUrl, setLogoUrl] = useState<string | undefined>('');
+  const [logo, setLogo] = useState<WebsiteAssetRef | undefined>();
   const [websiteUrl, setWebsiteUrl] = useState('');
   const [description, setDescription] = useState('');
   const [visible, setVisible] = useState(true);
@@ -25,6 +28,7 @@ export const SponsorModal: React.FC<SponsorModalProps> = ({ open, onOpenChange, 
     if (initialData) {
       setName(initialData.name || '');
       setLogoUrl(initialData.logoUrl || '');
+      setLogo(initialData.logo);
       setWebsiteUrl(initialData.websiteUrl || '');
       setDescription(initialData.description || '');
       setVisible(initialData.visible);
@@ -32,6 +36,7 @@ export const SponsorModal: React.FC<SponsorModalProps> = ({ open, onOpenChange, 
     } else {
       setName('');
       setLogoUrl('');
+      setLogo(undefined);
       setWebsiteUrl('');
       setDescription('');
       setVisible(true);
@@ -53,6 +58,7 @@ export const SponsorModal: React.FC<SponsorModalProps> = ({ open, onOpenChange, 
     await onSave({
       name: name.trim(),
       logoUrl,
+      logo,
       websiteUrl: websiteUrl.trim() || undefined,
       description: description.trim() || undefined,
       visible,
@@ -69,7 +75,7 @@ export const SponsorModal: React.FC<SponsorModalProps> = ({ open, onOpenChange, 
       <div className="relative bg-white dark:bg-slate-900 w-full max-w-2xl rounded-xl shadow-2xl flex flex-col max-h-[90vh] border border-slate-200 dark:border-slate-800 transition-colors p-6 space-y-6">
         <div className="space-y-1">
           <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">{initialData ? 'Edit Sponsor' : 'Add Sponsor'}</h2>
-          <p className="text-sm text-slate-500 dark:text-slate-400">Upload the sponsor logo and details. Use a 430×215 image for best quality.</p>
+          <p className="text-sm text-slate-500 dark:text-slate-400">Upload the sponsor logo and details. Use a 430x215 image for best quality.</p>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6 overflow-y-auto pr-1">
@@ -114,13 +120,19 @@ export const SponsorModal: React.FC<SponsorModalProps> = ({ open, onOpenChange, 
           <div className="space-y-3">
             <div className="space-y-2">
               <label className="text-sm font-medium text-slate-700 dark:text-slate-300">Logo *</label>
-              <ImageUploader
+              <SingleImageField
                 value={logoUrl}
                 onChange={setLogoUrl}
+                asset={logo}
+                onAssetChange={setLogo}
+                eventId={eventId}
                 aspectRatio="landscape"
+                category="logo"
+                maxSizeMB={4}
                 placeholder="Click to upload logo"
+                altText={name.trim() ? `${name.trim()} logo` : undefined}
               />
-              <p className="text-xs text-slate-500 dark:text-slate-400">Recommended: 430×215 PNG/SVG with transparent background.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Recommended: 430x215 PNG/SVG with transparent background.</p>
             </div>
 
             {logoUrl && (

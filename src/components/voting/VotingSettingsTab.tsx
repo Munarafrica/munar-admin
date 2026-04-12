@@ -4,6 +4,7 @@ import { VotingSettings, VotingMode, EligibilityType, TransparencyMode } from '.
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { cn } from '../ui/utils';
+import { toast } from 'sonner';
 import {
   Shield,
   Bell,
@@ -55,8 +56,10 @@ export const VotingSettingsTab: React.FC<VotingSettingsTabProps> = ({
     try {
       await onSave(formData);
       setHasChanges(false);
+      toast.success('Voting settings saved.');
     } catch (error) {
       console.error('Failed to save settings:', error);
+      toast.error('Failed to save voting settings.');
     } finally {
       setIsSaving(false);
     }
@@ -78,17 +81,17 @@ export const VotingSettingsTab: React.FC<VotingSettingsTabProps> = ({
 
   const eligibilityLabels: Record<EligibilityType, string> = {
     open: 'Anyone can vote',
-    authenticated: 'Authenticated users',
+    authenticated: 'Registered users only',
     'ticket-holders': 'Ticket holders only',
     vip: 'VIP members only',
-    invited: 'Invited only',
+    invited: 'Invited voters only',
   };
 
   const transparencyLabels: Record<TransparencyMode, string> = {
     live: 'Live (real-time results)',
-    hidden: 'Hidden until end',
+    hidden: 'Hidden until voting ends',
     'percentage-only': 'Percentage only',
-    'after-close': 'After voting closes',
+    'after-close': 'Manual result release',
   };
 
   return (

@@ -16,6 +16,23 @@ export interface WebsiteAssetRef {
   height?: number;
 }
 
+export interface WebsiteSponsor {
+  id: string;
+  name: string;
+  websiteUrl?: string;
+  description?: string;
+  logo: WebsiteAssetRef;
+  isVisible: boolean;
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WebsiteSponsorsSettings {
+  grayscaleLogos: boolean;
+  sponsors: WebsiteSponsor[];
+}
+
 export interface HeroOverlayConfig {
   enabled?: boolean;
   style?: 'solid' | 'gradient';
@@ -274,6 +291,8 @@ export interface WebsiteConfig {
   logoAsset?: WebsiteAssetRef;
   /** Whether the sticky navbar is shown */
   navbarEnabled?: boolean;
+  /** Sponsor logos and display preferences stored in website settings */
+  sponsors?: WebsiteSponsorsSettings;
   /** 
    * Custom content blocks - can be placed anywhere among sections
    * Each block has an 'order' property that determines its position

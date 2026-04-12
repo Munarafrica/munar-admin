@@ -1,8 +1,11 @@
+import { WebsiteAssetRef } from '../modules/website/types';
+
 export interface Sponsor {
   id: string;
   eventId: string;
   name: string;
   logoUrl: string;
+  logo?: WebsiteAssetRef;
   websiteUrl?: string;
   description?: string;
   visible: boolean;
@@ -13,7 +16,8 @@ export interface Sponsor {
 
 export interface CreateSponsorRequest {
   name: string;
-  logoUrl: string;
+  logoUrl?: string;
+  logo?: WebsiteAssetRef;
   websiteUrl?: string;
   description?: string;
   visible?: boolean;
@@ -24,3 +28,13 @@ export interface UpdateSponsorRequest extends Partial<CreateSponsorRequest> {
 }
 
 export type ReorderDirection = 'up' | 'down';
+
+export interface SponsorsSettings {
+  grayscaleLogos: boolean;
+  sponsors: Sponsor[];
+}
+
+export const DEFAULT_SPONSORS_SETTINGS: SponsorsSettings = {
+  grayscaleLogos: false,
+  sponsors: [],
+};

@@ -36,7 +36,7 @@ export const SponsorCard: React.FC<SponsorCardProps> = ({
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           <Badge variant="secondary" className="bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-0 text-[11px]">
-            #{order}
+            #{order + 1}
           </Badge>
           <span className="text-xs px-2 py-1 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400">
             {visible ? 'Visible' : 'Hidden'}

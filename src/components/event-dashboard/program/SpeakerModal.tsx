@@ -52,8 +52,8 @@ export const SpeakerModal: React.FC<SpeakerModalProps> = ({ isOpen, onClose, onS
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.role) {
-      toast.error("Name and Role are required");
+    if (!formData.name) {
+      toast.error("Full name is required");
       return;
     }
     setIsSaving(true);
@@ -141,13 +141,12 @@ export const SpeakerModal: React.FC<SpeakerModalProps> = ({ isOpen, onClose, onS
 
                 <div className="space-y-1.5">
                   <label className="text-sm font-medium text-slate-700 dark:text-slate-300">
-                    Job Title / Role <span className="text-red-500">*</span>
+                    Job Title / Role
                   </label>
                   <div className="relative">
                     <Briefcase className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                     <input
                       type="text"
-                      required
                       value={formData.role}
                       onChange={e => setFormData({...formData, role: e.target.value})}
                       placeholder="e.g. Chief Product Officer"

@@ -181,8 +181,19 @@ class WebsiteService {
       return updated;
     }
 
+    const currentWebsiteSettingsJson = await apiClient
+      .get<Record<string, unknown> | null>(`/events/${eventId}/website-settings`)
+      .then((settings) => {
+        const json = settings && 'websiteSettingsJson' in settings
+          ? (settings.websiteSettingsJson as Record<string, unknown> | null | undefined)
+          : settings;
+        return json && typeof json === 'object' ? json : {};
+      })
+      .catch(() => ({}));
+
     const settingsPayload: UpdateEventSettingsRequest = {
       websiteSettingsJson: {
+        ...currentWebsiteSettingsJson,
         templateId: nextConfig.templateId,
         theme: nextConfig.theme,
         accessControl: nextConfig.accessControl,
@@ -191,6 +202,7 @@ class WebsiteService {
         logoAsset: nextConfig.logoAsset,
         navbarEnabled: nextConfig.navbarEnabled,
         socialLinks: nextConfig.socialLinks,
+        ...(nextConfig.sponsors ? { sponsors: nextConfig.sponsors } : {}),
       },
     };
 

@@ -16,6 +16,7 @@ import { useCampaigns, useVotingAnalytics } from '../hooks';
 import { VotingProvider, useVoting } from '../contexts';
 import { votingService, eventsService } from '../services';
 import { useEventId } from '../lib/navigation';
+import { toast } from 'sonner';
 import { 
   VotingCampaign, 
   VotingCategory, 
@@ -111,6 +112,11 @@ const VotingManagementContent: React.FC<VotingManagementProps> = ({ onNavigate }
 
   // Handlers
   const handleAddCampaign = () => {
+    if (!votingService.votingApiAvailable) {
+      toast.info('Voting campaign creation is not available yet.');
+      return;
+    }
+
     setEditingCampaign(undefined);
     setShowCampaignModal(true);
   };
@@ -123,6 +129,7 @@ const VotingManagementContent: React.FC<VotingManagementProps> = ({ onNavigate }
   const handleSaveCampaign = async (campaignData: CreateCampaignRequest) => {
     if (editingCampaign) {
       await updateCampaign(editingCampaign.id, campaignData);
+    } else {
       const created = await createCampaign(campaignData);
       if (created) {
         eventsService.updateModuleCount(
@@ -133,7 +140,6 @@ const VotingManagementContent: React.FC<VotingManagementProps> = ({ onNavigate }
           'vote'
         );
       }
-      await createCampaign(campaignData);
     }
     setShowCampaignModal(false);
   };
@@ -365,7 +371,13 @@ const VotingManagementContent: React.FC<VotingManagementProps> = ({ onNavigate }
           <div className="flex gap-2 shrink-0">
             <Button
               variant="outline"
-              onClick={() => onNavigate?.('public-vote')}
+              onClick={() => {
+                if (!votingService.votingApiAvailable) {
+                  toast.info('Voting public page is not available yet.');
+                  return;
+                }
+                onNavigate?.('public-vote');
+              }}
               className="gap-2 dark:bg-slate-900 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800"
             >
               <Eye className="w-4 h-4" />
@@ -491,6 +503,7 @@ const VotingManagementContent: React.FC<VotingManagementProps> = ({ onNavigate }
                     >
                       <option value="all">All Status</option>
                       <option value="draft">Draft</option>
+                      <option value="scheduled">Scheduled</option>
                       <option value="active">Active</option>
                       <option value="paused">Paused</option>
                       <option value="ended">Ended</option>

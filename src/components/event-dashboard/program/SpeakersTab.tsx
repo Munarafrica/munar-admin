@@ -1,9 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Speaker, Session } from '../types';
 import { Button } from '../../ui/button';
-import { Plus, Search, Filter, MoreVertical, Edit2, Trash2, Linkedin, Twitter, Globe, User, Copy, Loader2 } from 'lucide-react';
+import { Plus, Search, Filter, Edit2, Trash2, Linkedin, Twitter, Globe, User, Loader2 } from 'lucide-react';
 import { SpeakerModal } from './SpeakerModal';
-import { cn } from '../../ui/utils';
 
 interface SpeakersTabProps {
   speakers: Speaker[];
@@ -12,12 +11,14 @@ interface SpeakersTabProps {
   onAddSpeaker: (speaker: Partial<Speaker>) => void | Promise<void>;
   onEditSpeaker: (speaker: Speaker) => void | Promise<void>;
   onDeleteSpeaker: (id: string) => void;
+  onSearchSpeakers?: (params?: { search?: string; isFeatured?: boolean }) => void | Promise<void>;
 }
 
-export const SpeakersTab: React.FC<SpeakersTabProps> = ({ speakers, sessions, isLoading, onAddSpeaker, onEditSpeaker, onDeleteSpeaker }) => {
+export const SpeakersTab: React.FC<SpeakersTabProps> = ({ speakers, sessions, isLoading, onAddSpeaker, onEditSpeaker, onDeleteSpeaker, onSearchSpeakers }) => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingSpeaker, setEditingSpeaker] = useState<Speaker | undefined>(undefined);
   const [searchQuery, setSearchQuery] = useState('');
+  const [featuredOnly, setFeaturedOnly] = useState(false);
 
   const handleCreate = () => {
     setEditingSpeaker(undefined);
@@ -37,11 +38,26 @@ export const SpeakersTab: React.FC<SpeakersTabProps> = ({ speakers, sessions, is
     }
   };
 
-  const filteredSpeakers = speakers.filter(s => 
-    s.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
-    s.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    s.organization?.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => {
+    if (!onSearchSpeakers) return;
+
+    const timeout = window.setTimeout(() => {
+      onSearchSpeakers({
+        search: searchQuery.trim() || undefined,
+        isFeatured: featuredOnly ? true : undefined,
+      });
+    }, 250);
+
+    return () => window.clearTimeout(timeout);
+  }, [featuredOnly, onSearchSpeakers, searchQuery]);
+
+  const filteredSpeakers = onSearchSpeakers
+    ? speakers
+    : speakers.filter(s =>
+      s.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.organization?.toLowerCase().includes(searchQuery.toLowerCase())
+    ).filter(s => !featuredOnly || s.isFeatured);
 
   const getSessionCount = (speakerId: string) => {
     return sessions.filter(session => session.speakerIds.includes(speakerId)).length;
@@ -62,9 +78,13 @@ export const SpeakersTab: React.FC<SpeakersTabProps> = ({ speakers, sessions, is
           />
         </div>
         <div className="flex gap-2">
-            <Button variant="outline" className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800 gap-2">
+            <Button
+                variant="outline"
+                onClick={() => setFeaturedOnly(value => !value)}
+                className="dark:bg-slate-900 dark:border-slate-800 dark:text-slate-200 dark:hover:bg-slate-800 gap-2"
+            >
                 <Filter className="w-4 h-4" />
-                Filter
+                {featuredOnly ? 'Featured' : 'Filter'}
             </Button>
             <Button 
                 onClick={handleCreate} 
@@ -88,9 +108,9 @@ export const SpeakersTab: React.FC<SpeakersTabProps> = ({ speakers, sessions, is
               </div>
               <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">No speakers found</h3>
               <p className="text-slate-500 dark:text-slate-400 max-w-xs mt-1">
-                  {searchQuery ? "Try adjusting your search terms." : "Add your first speaker to get started."}
+                  {searchQuery || featuredOnly ? "Try adjusting your filters." : "Add your first speaker to get started."}
               </p>
-              {!searchQuery && (
+              {!searchQuery && !featuredOnly && (
                   <Button onClick={handleCreate} className="mt-4 bg-indigo-600 text-white">Add Speaker</Button>
               )}
           </div>
