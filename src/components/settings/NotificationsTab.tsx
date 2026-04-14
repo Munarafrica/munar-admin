@@ -131,15 +131,7 @@ export const NotificationsTab: React.FC = () => {
     setError(null);
     setSavedMessage(null);
     try {
-      const updated = await settingsService.saveNotificationSettings({
-        preferences,
-        digestFrequency,
-      });
-      setSettings(updated);
-      setOriginal(updated);
-      setPreferences(updated.preferences);
-      setDigestFrequency(updated.digestFrequency);
-      setHasChanges(false);
+      await settingsService.saveNotificationSettings({ preferences, digestFrequency });
       setSavedMessage('Notification preferences saved');
       setTimeout(() => setSavedMessage(null), 3000);
     } catch (err) {
@@ -196,6 +188,10 @@ export const NotificationsTab: React.FC = () => {
           {error}
         </div>
       )}
+      <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 text-sm">
+        <AlertCircle className="w-4 h-4 shrink-0" />
+        Notification preferences are draft-only until GET/PUT /settings/notifications is available.
+      </div>
 
       {/* Notification toggles */}
       <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 divide-y divide-slate-100 dark:divide-slate-800">

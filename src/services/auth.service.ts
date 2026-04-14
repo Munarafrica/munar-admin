@@ -2,8 +2,10 @@ import { config } from "../config";
 import { ApiEnvelope, normalizeUser, unwrap } from "../helpers/auth.helpers";
 import { apiClient } from "../lib/api-client";
 import {
+  ApiException,
   ApiResponse,
   AuthResponse,
+  AuthTokens,
   LoginRequest,
   MessageResponse,
   MutationResponse,
@@ -191,7 +193,19 @@ class AuthService {
     };
   }
 
-  async refreshToken(): Promise<AuthResponse> {
+  async changePassword(): Promise<MutationResponse> {
+    if (config.features.useMockData) {
+      await delay(400);
+      return {
+        success: true,
+        message: "Password changed successfully",
+      };
+    }
+
+    throw new Error("Password changes need the backend change-password endpoint before they can run.");
+  }
+
+  async refreshToken(): Promise<AuthTokens> {
     const refreshToken = localStorage.getItem(config.auth.refreshTokenKey);
     if (!refreshToken) {
       throw new Error("No refresh token available");
@@ -214,25 +228,36 @@ class AuthService {
       return response;
     }
 
-    const response = unwrap(
-      await apiClient.post<ApiEnvelope<AuthResponse>>(
-        "/auth/refresh",
-        { refreshToken },
-        { skipAuthRefresh: true },
-      ),
-    );
+    try {
+      const response = unwrap(
+        await apiClient.post<ApiEnvelope<AuthTokens & { user?: User }>>(
+          "/auth/refresh",
+          { refreshToken },
+          { skipAuthRefresh: true },
+        ),
+      );
 
-    this.setAuthData(response);
-    return response;
+      this.setAuthData(response);
+      return response;
+    } catch (error) {
+      if (error instanceof ApiException && error.statusCode === 401) {
+        this.handleSessionExpired();
+      }
+
+      throw error;
+    }
   }
 
-  private setAuthData(auth: AuthResponse): void {
+  private setAuthData(auth: AuthTokens & { user?: User }): void {
     localStorage.setItem(config.auth.tokenKey, auth.accessToken);
     localStorage.setItem(config.auth.refreshTokenKey, auth.refreshToken);
-    localStorage.setItem(
-      config.auth.userKey,
-      JSON.stringify(normalizeUser(auth.user)),
-    );
+
+    if (auth.user) {
+      localStorage.setItem(
+        config.auth.userKey,
+        JSON.stringify(normalizeUser(auth.user)),
+      );
+    }
   }
 
   clearAuthData(): void {
@@ -240,6 +265,23 @@ class AuthService {
     localStorage.removeItem(config.auth.refreshTokenKey);
     localStorage.removeItem(config.auth.userKey);
     localStorage.removeItem(config.auth.activeTenantKey);
+  }
+
+  private handleSessionExpired(): void {
+    const hadAuthState =
+      !!localStorage.getItem(config.auth.tokenKey) ||
+      !!localStorage.getItem(config.auth.refreshTokenKey) ||
+      !!localStorage.getItem(config.auth.userKey);
+
+    this.clearAuthData();
+
+    if (hadAuthState) {
+      window.dispatchEvent(
+        new CustomEvent("auth:logout", {
+          detail: { reason: "session-expired" },
+        }),
+      );
+    }
   }
 
   isAuthenticated(): boolean {

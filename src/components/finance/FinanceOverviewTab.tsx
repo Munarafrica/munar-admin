@@ -45,7 +45,7 @@ function formatCurrency(amount: number, currency = 'NGN'): string {
     currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(amount / 100);
 }
 
 function formatDate(dateStr: string): string {
@@ -74,9 +74,9 @@ export const FinanceOverviewTab: React.FC<FinanceOverviewTabProps> = ({
   }
 
   return (
-    <div className="space-y-8">
+    <div className="space-y-10">
       {/* Summary Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-5">
         <SummaryCard
           label="Total Earnings"
           value={formatCurrency(overview?.totalEarnings || 0)}
@@ -112,8 +112,8 @@ export const FinanceOverviewTab: React.FC<FinanceOverviewTabProps> = ({
       </div>
 
       {/* Earnings Breakdown */}
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 mt-6 p-6 sm:p-8">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 mb-8">
           <div>
             <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
               Earnings Breakdown
@@ -150,20 +150,20 @@ export const FinanceOverviewTab: React.FC<FinanceOverviewTabProps> = ({
         ) : earnings ? (
           <>
             {/* Breakdown Table */}
-            <div className="overflow-x-auto">
-              <table className="w-full">
+            <div className="overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-800">
+              <table className="w-full min-w-[720px]">
                 <thead>
-                  <tr className="border-b border-slate-100 dark:border-slate-800">
-                    <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider pb-3 pl-3">
+                  <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-800/30">
+                    <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-4 pl-5 pr-4">
                       Source
                     </th>
-                    <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider pb-3">
+                    <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-4 px-4">
                       Transactions
                     </th>
-                    <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider pb-3 pr-3">
+                    <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-4 px-4">
                       Revenue
                     </th>
-                    <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider pb-3 pr-3 hidden sm:table-cell">
+                    <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-4 pl-4 pr-5 hidden sm:table-cell">
                       Share
                     </th>
                   </tr>
@@ -177,26 +177,26 @@ export const FinanceOverviewTab: React.FC<FinanceOverviewTabProps> = ({
             </div>
 
             {/* Fee Summary */}
-            <div className="mt-6 pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
-              <div className="flex justify-between text-sm">
+            <div className="mt-8 pt-6 border-t border-slate-100 dark:border-slate-800 space-y-3">
+              <div className="flex justify-between gap-6 text-sm">
                 <span className="text-slate-500 dark:text-slate-400">Total Revenue</span>
                 <span className="font-semibold text-slate-900 dark:text-slate-100">
                   {formatCurrency(earnings.totalRevenue)}
                 </span>
               </div>
-              <div className="flex justify-between text-sm">
+              <div className="flex justify-between gap-6 text-sm">
                 <span className="text-slate-500 dark:text-slate-400">Platform Fees (6%)</span>
                 <span className="text-red-500 dark:text-red-400">
                   −{formatCurrency(earnings.totalPlatformFees)}
                 </span>
               </div>
-              <div className="flex justify-between text-sm">
+              <div className="flex justify-between gap-6 text-sm">
                 <span className="text-slate-500 dark:text-slate-400">Gateway Fees (Paystack)</span>
                 <span className="text-red-500 dark:text-red-400">
                   −{formatCurrency(earnings.totalGatewayFees)}
                 </span>
               </div>
-              <div className="flex justify-between text-sm pt-2 border-t border-slate-100 dark:border-slate-800">
+              <div className="flex justify-between gap-6 text-sm pt-3 border-t border-slate-100 dark:border-slate-800">
                 <span className="font-bold text-slate-900 dark:text-slate-100">Net Earnings</span>
                 <span className="font-bold text-emerald-600 dark:text-emerald-400">
                   {formatCurrency(earnings.netEarnings)}
@@ -214,10 +214,10 @@ export const FinanceOverviewTab: React.FC<FinanceOverviewTabProps> = ({
       </div>
 
       {/* Quick Actions */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 mt-6 gap-5">
         <button
           onClick={onViewPayouts}
-          className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+          className="flex items-center justify-between gap-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
         >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-emerald-50 dark:bg-emerald-900/20 text-emerald-600 dark:text-emerald-400">
@@ -235,7 +235,7 @@ export const FinanceOverviewTab: React.FC<FinanceOverviewTabProps> = ({
 
         <button
           onClick={onViewTransactions}
-          className="flex items-center justify-between bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
+          className="flex items-center justify-between gap-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors group"
         >
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-indigo-50 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400">
@@ -271,8 +271,8 @@ function SummaryCard({
   description: string;
 }) {
   return (
-    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 shadow-sm">
-      <div className="flex items-center gap-3 mb-3">
+    <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 shadow-sm min-h-[132px]">
+      <div className="flex items-center gap-3 mb-4">
         <div
           className={cn(
             'p-2 rounded-lg',
@@ -287,7 +287,7 @@ function SummaryCard({
         <span className="text-sm font-medium text-slate-500 dark:text-slate-400">{label}</span>
       </div>
       <p className="text-2xl font-bold text-slate-900 dark:text-slate-100">{value}</p>
-      <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">{description}</p>
+      <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">{description}</p>
     </div>
   );
 }
@@ -299,7 +299,7 @@ function EarningsRow({ item, total }: { item: EarningsBreakdown; total: number }
 
   return (
     <tr className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50/50 dark:hover:bg-slate-800/30 transition-colors">
-      <td className="py-3.5 pl-3">
+      <td className="py-4 pl-5 pr-4">
         <div className="flex items-center gap-3">
           <div
             className={cn(
@@ -315,11 +315,11 @@ function EarningsRow({ item, total }: { item: EarningsBreakdown; total: number }
           <span className="text-sm font-medium text-slate-900 dark:text-slate-100">{item.label}</span>
         </div>
       </td>
-      <td className="py-3.5 text-right text-sm text-slate-600 dark:text-slate-300">{item.count}</td>
-      <td className="py-3.5 text-right text-sm font-semibold text-slate-900 dark:text-slate-100 pr-3">
+      <td className="py-4 px-4 text-right text-sm text-slate-600 dark:text-slate-300">{item.count}</td>
+      <td className="py-4 px-4 text-right text-sm font-semibold text-slate-900 dark:text-slate-100">
         {formatCurrency(item.revenue)}
       </td>
-      <td className="py-3.5 text-right text-sm text-slate-500 dark:text-slate-400 pr-3 hidden sm:table-cell">
+      <td className="py-4 pl-4 pr-5 text-right text-sm text-slate-500 dark:text-slate-400 hidden sm:table-cell">
         {percentage}%
       </td>
     </tr>

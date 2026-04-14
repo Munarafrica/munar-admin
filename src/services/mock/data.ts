@@ -1,6 +1,6 @@
 // Mock data for development - will be replaced by real API calls
 import { User } from '../../types/api';
-import { EventData, TicketType, Attendee, Speaker, Session, Form, FormResponse, DPFrame } from '../../components/event-dashboard/types';
+import { EventData, TicketType, Attendee, Speaker, Session, Form, FormResponse, DPFrame, TicketScannerBooth, TicketScanRecord } from '../../components/event-dashboard/types';
 import { Product, Order, Discount, Bundle, FulfilmentConfig } from '../../types/merchandise';
 import { Sponsor } from '../../types/sponsors';
 
@@ -136,6 +136,66 @@ export const mockAttendees: Attendee[] = [
   { id: 'a3', name: 'Acme Corp', email: 'contact@acme.com', ticketTypeId: 't2', ticketTypeName: 'VIP Table', purchaseDate: '2026-01-20', status: 'Confirmed', checkedIn: false },
   { id: 'a4', name: 'Bob Johnson', email: 'bob@tech.com', ticketTypeId: 't3', ticketTypeName: 'Regular', purchaseDate: '2026-02-05', status: 'Confirmed', checkedIn: false },
   { id: 'a5', name: 'Alice Williams', email: 'alice@startup.io', ticketTypeId: 't3', ticketTypeName: 'Regular', purchaseDate: '2026-02-08', status: 'Pending', checkedIn: false },
+];
+
+// Mock Ticket Scanner Booths
+export const mockTicketScannerBooths: TicketScannerBooth[] = [
+  {
+    id: 'booth-1',
+    eventId: 'evt-1',
+    name: 'Booth 1',
+    status: 'ACTIVE',
+    pairingToken: 'evt-1-booth-1-pairing-token',
+    pairingUrl: 'https://app.munar.co/scanner/pair/evt-1-booth-1-pairing-token',
+    assignedScannerName: 'Ada Okafor',
+    assignedScannerEmail: 'ada@example.com',
+    assignedScannerPhone: '+2348012345678',
+    linkedAt: '2026-04-10T10:30:00Z',
+    totalScans: 18,
+    lastScanAt: '2026-04-12T13:15:00Z',
+    createdAt: '2026-04-09T09:00:00Z',
+  },
+  {
+    id: 'booth-2',
+    eventId: 'evt-1',
+    name: 'Booth 2',
+    status: 'UNCLAIMED',
+    pairingToken: 'evt-1-booth-2-pairing-token',
+    pairingUrl: 'https://app.munar.co/scanner/pair/evt-1-booth-2-pairing-token',
+    totalScans: 0,
+    linkedAt: null,
+    lastScanAt: null,
+    createdAt: '2026-04-09T09:10:00Z',
+  },
+];
+
+export const mockTicketScanRecords: TicketScanRecord[] = [
+  {
+    id: 'scan-1',
+    eventId: 'evt-1',
+    boothId: 'booth-1',
+    boothName: 'Booth 1',
+    attendeeId: 'a2',
+    attendeeName: 'Jane Smith',
+    attendeeEmail: 'jane@example.com',
+    ticketTypeName: 'Early Bird',
+    scannedAt: '2026-04-12T13:15:00Z',
+    result: 'VALID',
+    scannerName: 'Ada Okafor',
+  },
+  {
+    id: 'scan-2',
+    eventId: 'evt-1',
+    boothId: 'booth-1',
+    boothName: 'Booth 1',
+    attendeeId: 'a3',
+    attendeeName: 'Acme Corp',
+    attendeeEmail: 'contact@acme.com',
+    ticketTypeName: 'VIP Table',
+    scannedAt: '2026-04-12T13:08:00Z',
+    result: 'DUPLICATE',
+    scannerName: 'Ada Okafor',
+  },
 ];
 
 // Mock Speakers

@@ -140,6 +140,38 @@ export interface Attendee {
   metadata?: any;
 }
 
+export type TicketScannerBoothStatus = 'UNCLAIMED' | 'ACTIVE' | 'INACTIVE';
+
+export interface TicketScannerBooth {
+  id: string;
+  eventId: string;
+  name: string;
+  status: TicketScannerBoothStatus;
+  pairingToken: string;
+  pairingUrl?: string;
+  assignedScannerName?: string;
+  assignedScannerEmail?: string;
+  assignedScannerPhone?: string;
+  linkedAt?: string | null;
+  totalScans: number;
+  lastScanAt?: string | null;
+  createdAt: string;
+}
+
+export interface TicketScanRecord {
+  id: string;
+  eventId: string;
+  boothId: string;
+  boothName: string;
+  attendeeId: string;
+  attendeeName: string;
+  attendeeEmail?: string;
+  ticketTypeName: string;
+  scannedAt: string;
+  result: 'VALID' | 'DUPLICATE' | 'INVALID';
+  scannerName?: string;
+}
+
 // --- Speakers & Schedule Types ---
 
 export interface Speaker {

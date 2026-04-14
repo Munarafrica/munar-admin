@@ -153,6 +153,7 @@ const mockSessions: ActiveSession[] = [
 let mockSecuritySettings: SecuritySettings = {
   loginAlerts: true,
   twoFactorEnabled: false,
+  twoFactorChannel: null,
 };
 
 export function getMockSessions(): ActiveSession[] {

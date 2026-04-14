@@ -82,7 +82,10 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ activities }) => {
         </Button>
       </div>
       
-      <div className="divide-y divide-slate-50 dark:divide-slate-800">
+      <div
+        className="divide-y divide-slate-50 dark:divide-slate-800 overflow-y-auto"
+        style={{ maxHeight: 'min(420px, calc(100vh - 220px))' }}
+      >
           {activities.length === 0 ? (
             <div className="p-8 text-center text-slate-400 dark:text-slate-500 text-sm">No recent activity</div>
           ) : (

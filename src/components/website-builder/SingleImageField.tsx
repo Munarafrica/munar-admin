@@ -34,6 +34,12 @@ export interface SingleImageFieldProps {
   category?: WebsiteAssetCategory;
   /** Optional alt text to finalize with asset */
   altText?: string;
+  /** Optional file picker accept value */
+  accept?: string;
+  /** Optional MIME types to allow before upload */
+  acceptedMimeTypes?: string[];
+  /** Optional display hint for supported formats */
+  typeHint?: string;
   /** Optional explicit opener for a shared asset library modal */
   onOpenAssetLibrary?: (request: AssetLibraryRequestDetail) => void;
 }
@@ -349,6 +355,9 @@ export function SingleImageField({
   className,
   category = 'custom-block',
   altText,
+  accept = 'image/*',
+  acceptedMimeTypes,
+  typeHint: typeHintProp,
   onOpenAssetLibrary,
 }: SingleImageFieldProps) {
   const [isDragging, setIsDragging] = useState(false);
@@ -357,9 +366,9 @@ export function SingleImageField({
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [altTextDraft, setAltTextDraft] = useState(asset?.altText || '');
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const typeHint = category === 'logo' || category === 'section' || category === 'custom-block'
+  const typeHint = typeHintProp || (category === 'logo' || category === 'section' || category === 'custom-block'
     ? 'JPG, PNG, WebP, SVG'
-    : 'JPG, PNG, WebP';
+    : 'JPG, PNG, WebP');
 
   useEffect(() => {
     setAltTextDraft(asset?.altText || '');
@@ -372,7 +381,7 @@ export function SingleImageField({
       setPreviewUrl(null);
 
       // Validate file
-      const validationError = websiteUploadService.validateImage(file, category);
+      const validationError = websiteUploadService.validateImage(file, category, acceptedMimeTypes);
       if (validationError) {
         setError(validationError);
         return;
@@ -415,7 +424,7 @@ export function SingleImageField({
         reader.readAsDataURL(file);
       }
     },
-    [eventId, onChange, category]
+    [acceptedMimeTypes, altText, altTextDraft, category, eventId, onAssetChange, onChange]
   );
 
   // Drag handlers
@@ -498,7 +507,7 @@ export function SingleImageField({
         <input
           ref={fileInputRef}
           type="file"
-          accept="image/*"
+          accept={accept}
           onChange={handleInputChange}
           className="hidden"
           disabled={disabled || isUploading}

@@ -3,7 +3,9 @@
 
 // ─── Enums & Constants ───────────────────────────────────────────────────────
 
-export type PayoutStatus = 'scheduled' | 'processing' | 'completed' | 'failed';
+import type { CurrencyCode, PaymentStatus, PaymentTransaction } from './api';
+
+export type PayoutStatus = 'scheduled' | 'processing' | 'completed' | 'failed' | 'cancelled';
 export type TransactionType = 'ticket' | 'voting' | 'merch' | 'forms' | 'refund';
 export type TransactionStatus = 'completed' | 'pending' | 'failed' | 'refunded';
 export type DisputeStatus = 'open' | 'under_review' | 'resolved' | 'rejected';
@@ -24,6 +26,7 @@ export const PAYOUT_STATUS_LABELS: Record<PayoutStatus, string> = {
   processing: 'Processing',
   completed: 'Completed',
   failed: 'Failed',
+  cancelled: 'Cancelled',
 };
 
 export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
@@ -85,12 +88,18 @@ export interface Transaction {
   customerEmail: string;
   description: string;
   createdAt: string;
+  backendStatus?: PaymentStatus;
+  backendTransactionType?: PaymentTransaction['transactionType'];
+  provider?: string;
 }
 
 export interface TransactionFilters {
   eventId?: string;
   source?: TransactionType;
   status?: TransactionStatus;
+  backendStatus?: PaymentStatus;
+  provider?: string;
+  currency?: CurrencyCode;
   dateFrom?: string;
   dateTo?: string;
   search?: string;
@@ -120,6 +129,7 @@ export interface Payout {
   scheduledDate: string;
   processedDate: string | null;
   reference: string;
+  failureReason?: string | null;
   breakdown: PayoutBreakdown;
   createdAt: string;
 }
@@ -147,20 +157,37 @@ export interface PayoutFilters {
 
 export interface BankAccount {
   id: string;
+  provider?: string;
   bankName: string;
   bankCode: string;
   accountNumber: string;
+  accountNumberLast4?: string;
   accountName: string;
   status: BankAccountStatus;
   isDefault: boolean;
   recipientCode: string | null;  // Paystack recipient code
+  metadataJson?: Record<string, unknown> | null;
   createdAt: string;
 }
 
 export interface AddBankAccountRequest {
-  accountNumber: string;
-  bankCode: string;
+  provider: string;
+  accountName: string;
   bankName: string;
+  accountNumberLast4: string;
+  recipientCode?: string;
+  isDefault?: boolean;
+  metadataJson?: Record<string, unknown>;
+  accountNumber?: string;
+  bankCode?: string;
+}
+
+export interface CreatePayoutRequest {
+  payoutAccountId: string;
+  currency: CurrencyCode;
+  amountMinor: number;
+  scheduledFor?: string;
+  metadataJson?: Record<string, unknown>;
 }
 
 export interface VerifyBankAccountResponse {

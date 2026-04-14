@@ -96,7 +96,7 @@ export const router = createBrowserRouter([
       { path: '/', element: <Navigate to="/events" replace /> },
       { path: '/events', element: <RequireTenant><WithNav Component={MyEvents} /></RequireTenant> },
       { path: '/events/create', element: <RequireTenant><CreateEventRoute /></RequireTenant> },
-      { path: '/finance', element: <RequireAuth><WithNav Component={FinanceManagement} /></RequireAuth> },
+      { path: '/finance', element: <RequireTenant><WithNav Component={FinanceManagement} /></RequireTenant> },
       { path: '/settings', element: <RequireAuth><WithNav Component={Settings} /></RequireAuth> },
       { path: '/checkout/tickets/callback', element: <TicketCheckoutCallback /> },
 
@@ -124,7 +124,9 @@ export const router = createBrowserRouter([
         children: [
           { index: true, element: <WithNav Component={EventDashboard} /> },
           { path: 'tickets', element: <WithNav Component={TicketManagement} /> },
-          { path: 'program', element: <WithNav Component={ProgramManagement} /> },
+          { path: 'program', element: <Navigate to="schedule" replace /> },
+          { path: 'program/schedule', element: <WithNav Component={ProgramManagement} extraProps={{ mode: 'schedule' }} /> },
+          { path: 'program/speakers', element: <WithNav Component={ProgramManagement} extraProps={{ mode: 'speakers' }} /> },
           { path: 'forms', element: <WithNav Component={FormManagement} /> },
           { path: 'merchandise', element: <WithNav Component={MerchandiseManagement} /> },
           { path: 'voting', element: <WithNav Component={VotingManagement} /> },

@@ -20,6 +20,8 @@ export type LegacyPage =
   | 'event-dashboard'
   | 'ticket-management'
   | 'program-management'
+  | 'program-schedule-management'
+  | 'program-speakers-management'
   | 'form-management'
   | 'merchandise-management'
   | 'voting-management'
@@ -63,6 +65,8 @@ function getRoutePath(page: LegacyPage, eventId?: string): string {
     'website-builder': `/events/${eid}/website`,
     'ticket-management': `/events/${eid}/tickets`,
     'program-management': `/events/${eid}/program`,
+    'program-schedule-management': `/events/${eid}/program/schedule`,
+    'program-speakers-management': `/events/${eid}/program/speakers`,
     'form-management': `/events/${eid}/forms`,
     'merchandise-management': `/events/${eid}/merchandise`,
     'voting-management': `/events/${eid}/voting`,

@@ -118,6 +118,23 @@ const updateProgress = (eventId: string, progress: EventProgress) => {
   saveProgressStore(store);
 };
 
+const getLocalActivities = (eventId: string): Activity[] => {
+  if (typeof window === 'undefined') return [];
+  return ensureProgress(eventId).activities;
+};
+
+const mergeActivities = (limit: number, ...activityGroups: Activity[][]): Activity[] => {
+  const byId = new Map<string, Activity>();
+
+  activityGroups.flat().forEach((activity) => {
+    byId.set(activity.id, activity);
+  });
+
+  return Array.from(byId.values())
+    .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+    .slice(0, limit);
+};
+
 const buildChecklist = (modules: Module[]): ChecklistItem[] => {
   const items = checklistConfig.map((item) => {
     const moduleObj = modules.find((module) => module.name === item.module);
@@ -752,11 +769,14 @@ class EventsService {
       return progress.activities.slice(0, limit);
     }
 
+    const localActivities = getLocalActivities(eventId);
+
     try {
-      const response = await apiClient.get<ApiResponse<Activity[]>>(`/events/${eventId}/activities`, { params: { limit } });
-      return response.data;
+      const response = await apiClient.get<ApiResponse<Activity[]> | Activity[]>(`/events/${eventId}/activities`, { params: { limit } });
+      const backendActivities = Array.isArray(response) ? response : response.data;
+      return mergeActivities(limit, backendActivities ?? [], localActivities);
     } catch {
-      return [];
+      return localActivities.slice(0, limit);
     }
   }
 

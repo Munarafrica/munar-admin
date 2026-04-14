@@ -1,7 +1,7 @@
 // Tickets Hook - fetch and manage tickets for an event
 import { useState, useEffect, useCallback } from 'react';
 import { ticketsService } from '../services';
-import { TicketType, Attendee } from '../components/event-dashboard/types';
+import { TicketType, Attendee, TicketScannerBooth, TicketScanRecord } from '../components/event-dashboard/types';
 import { ApiException, PaginatedResponse, SearchParams } from '../types/api';
 
 interface UseTicketsOptions {
@@ -19,6 +19,12 @@ interface UseTicketsReturn {
   attendees: Attendee[];
   attendeesMeta: PaginatedResponse<Attendee>['meta'] | null;
   isLoadingAttendees: boolean;
+
+  // Scanner Booths
+  scannerBooths: TicketScannerBooth[];
+  scannerBoothScans: TicketScanRecord[];
+  isLoadingScannerBooths: boolean;
+  isLoadingScannerScans: boolean;
   
   // Ticket Actions
   fetchTickets: () => Promise<void>;
@@ -32,6 +38,12 @@ interface UseTicketsReturn {
   checkInAttendee: (attendeeId: string) => Promise<boolean>;
   undoCheckIn: (attendeeId: string) => Promise<boolean>;
   exportAttendees: (format?: 'csv' | 'xlsx') => Promise<void>;
+
+  // Scanner Booth Actions
+  fetchScannerBooths: () => Promise<void>;
+  createScannerBooth: () => Promise<TicketScannerBooth | null>;
+  deleteScannerBooth: (boothId: string) => Promise<boolean>;
+  fetchScannerBoothScans: (boothId?: string) => Promise<void>;
   
   // Analytics
   analytics: {
@@ -52,6 +64,12 @@ export function useTickets({ eventId, autoFetch = true }: UseTicketsOptions): Us
   const [attendees, setAttendees] = useState<Attendee[]>([]);
   const [attendeesMeta, setAttendeesMeta] = useState<PaginatedResponse<Attendee>['meta'] | null>(null);
   const [isLoadingAttendees, setIsLoadingAttendees] = useState(false);
+
+  // Scanner booth state
+  const [scannerBooths, setScannerBooths] = useState<TicketScannerBooth[]>([]);
+  const [scannerBoothScans, setScannerBoothScans] = useState<TicketScanRecord[]>([]);
+  const [isLoadingScannerBooths, setIsLoadingScannerBooths] = useState(false);
+  const [isLoadingScannerScans, setIsLoadingScannerScans] = useState(false);
   
   // Analytics state
   const [analytics, setAnalytics] = useState<{
@@ -193,6 +211,54 @@ export function useTickets({ eventId, autoFetch = true }: UseTicketsOptions): Us
     }
   }, [eventId]);
 
+  // Fetch scanner booths
+  const fetchScannerBooths = useCallback(async () => {
+    setIsLoadingScannerBooths(true);
+    try {
+      const data = await ticketsService.getScannerBooths(eventId);
+      setScannerBooths(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch scanner booths');
+    } finally {
+      setIsLoadingScannerBooths(false);
+    }
+  }, [eventId]);
+
+  const createScannerBooth = useCallback(async (): Promise<TicketScannerBooth | null> => {
+    try {
+      const booth = await ticketsService.createScannerBooth(eventId);
+      setScannerBooths((prev) => [...prev, booth]);
+      return booth;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create scanner booth');
+      return null;
+    }
+  }, [eventId]);
+
+  const deleteScannerBooth = useCallback(async (boothId: string): Promise<boolean> => {
+    try {
+      await ticketsService.deleteScannerBooth(eventId, boothId);
+      setScannerBooths((prev) => prev.filter((booth) => booth.id !== boothId));
+      setScannerBoothScans((prev) => prev.filter((scan) => scan.boothId !== boothId));
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to delete scanner booth');
+      return false;
+    }
+  }, [eventId]);
+
+  const fetchScannerBoothScans = useCallback(async (boothId?: string) => {
+    setIsLoadingScannerScans(true);
+    try {
+      const data = await ticketsService.getScannerBoothScans(eventId, boothId);
+      setScannerBoothScans(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to fetch scanner booth scans');
+    } finally {
+      setIsLoadingScannerScans(false);
+    }
+  }, [eventId]);
+
   // Fetch analytics
   const fetchAnalytics = useCallback(async () => {
     try {
@@ -212,6 +278,7 @@ export function useTickets({ eventId, autoFetch = true }: UseTicketsOptions): Us
     if (autoFetch && eventId) {
       fetchTickets();
       fetchAttendees();
+      fetchScannerBooths();
     }
   }, [autoFetch, eventId]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -222,6 +289,10 @@ export function useTickets({ eventId, autoFetch = true }: UseTicketsOptions): Us
     attendees,
     attendeesMeta,
     isLoadingAttendees,
+    scannerBooths,
+    scannerBoothScans,
+    isLoadingScannerBooths,
+    isLoadingScannerScans,
     fetchTickets,
     createTicket,
     updateTicket,
@@ -231,6 +302,10 @@ export function useTickets({ eventId, autoFetch = true }: UseTicketsOptions): Us
     checkInAttendee,
     undoCheckIn,
     exportAttendees,
+    fetchScannerBooths,
+    createScannerBooth,
+    deleteScannerBooth,
+    fetchScannerBoothScans,
     analytics,
     fetchAnalytics,
   };

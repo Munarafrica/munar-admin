@@ -2,6 +2,7 @@ import { config } from "../config";
 import { ApiError, ApiException, ApiResponse } from "../types/api";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
+type AuthErrorCode = "ACCESS_TOKEN_EXPIRED" | "UNAUTHORIZED";
 
 interface RequestConfig {
   headers?: Record<string, string>;
@@ -14,6 +15,10 @@ class ApiClient {
   private baseUrl: string;
   private defaultTimeout: number;
   private refreshPromise: Promise<boolean> | null = null;
+  private refreshableAuthCodes = new Set<AuthErrorCode>([
+    "ACCESS_TOKEN_EXPIRED",
+    "UNAUTHORIZED",
+  ]);
 
   constructor() {
     this.baseUrl = config.api.baseUrl;
@@ -56,6 +61,30 @@ class ApiClient {
     }
 
     return headers;
+  }
+
+  private isAuthRefreshExcludedEndpoint(endpoint: string): boolean {
+    return [
+      "/auth/login",
+      "/auth/register",
+      "/auth/forgot-password",
+      "/auth/reset-password",
+      "/auth/refresh",
+    ].some((authEndpoint) => endpoint.includes(authEndpoint));
+  }
+
+  private shouldAttemptRefresh(
+    error: unknown,
+    endpoint: string,
+    requestConfig?: RequestConfig,
+  ): error is ApiException {
+    return (
+      error instanceof ApiException &&
+      error.statusCode === 401 &&
+      this.refreshableAuthCodes.has(error.error.code as AuthErrorCode) &&
+      !requestConfig?.skipAuthRefresh &&
+      !this.isAuthRefreshExcludedEndpoint(endpoint)
+    );
   }
 
   // Handle response
@@ -159,11 +188,23 @@ class ApiClient {
 
   // Force logout - clear tokens and dispatch event
   private forceLogout(): void {
+    const hadAuthState =
+      !!localStorage.getItem(config.auth.tokenKey) ||
+      !!localStorage.getItem(config.auth.refreshTokenKey) ||
+      !!localStorage.getItem(config.auth.userKey);
+
     localStorage.removeItem(config.auth.tokenKey);
     localStorage.removeItem(config.auth.refreshTokenKey);
     localStorage.removeItem(config.auth.userKey);
     localStorage.removeItem(config.auth.activeTenantKey);
-    window.dispatchEvent(new CustomEvent("auth:logout"));
+
+    if (hadAuthState) {
+      window.dispatchEvent(
+        new CustomEvent("auth:logout", {
+          detail: { reason: "session-expired" },
+        }),
+      );
+    }
   }
 
   // Make request with timeout
@@ -196,13 +237,7 @@ class ApiClient {
       return this.handleResponse<T>(response);
     } catch (error) {
       // If 401 and not already a refresh-skip request, try refreshing
-      if (
-        error instanceof ApiException &&
-        error.statusCode === 401 &&
-        !requestConfig?.skipAuthRefresh &&
-        !endpoint.includes("/auth/refresh") &&
-        !endpoint.includes("/auth/login")
-      ) {
+      if (this.shouldAttemptRefresh(error, endpoint, requestConfig)) {
         const refreshed = await this.tryRefreshToken();
         if (refreshed) {
           // Retry the original request with the new token
@@ -211,11 +246,21 @@ class ApiClient {
             ...requestConfig,
             skipAuthRefresh: true,
           });
-        } else {
-          // Refresh failed, force logout
-          this.forceLogout();
-          throw error;
         }
+
+        // Refresh failed, force logout
+        this.forceLogout();
+        throw error;
+      }
+
+      if (
+        error instanceof ApiException &&
+        error.statusCode === 401 &&
+        requestConfig?.skipAuthRefresh &&
+        !this.isAuthRefreshExcludedEndpoint(endpoint)
+      ) {
+        this.forceLogout();
+        throw error;
       }
 
       if (error instanceof ApiException) {
@@ -282,6 +327,7 @@ class ApiClient {
     endpoint: string,
     file: File,
     additionalData?: Record<string, string>,
+    hasRetried = false,
   ): Promise<T> {
     const formData = new FormData();
     formData.append("file", file);
@@ -298,13 +344,27 @@ class ApiClient {
       headers["Authorization"] = `Bearer ${token}`;
     }
 
-    const response = await fetch(`${this.baseUrl}${endpoint}`, {
-      method: "POST",
-      headers,
-      body: formData,
-    });
+    try {
+      const response = await fetch(`${this.baseUrl}${endpoint}`, {
+        method: "POST",
+        headers,
+        body: formData,
+      });
 
-    return this.handleResponse<T>(response);
+      return await this.handleResponse<T>(response);
+    } catch (error) {
+      if (!hasRetried && this.shouldAttemptRefresh(error, endpoint)) {
+        const refreshed = await this.tryRefreshToken();
+
+        if (refreshed) {
+          return this.upload<T>(endpoint, file, additionalData, true);
+        }
+
+        this.forceLogout();
+      }
+
+      throw error;
+    }
   }
 }
 

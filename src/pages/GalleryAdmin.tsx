@@ -6,7 +6,6 @@ import { Badge } from '../components/ui/badge';
 import { Input } from '../components/ui/input';
 import { cn } from '../components/ui/utils';
 import { toast } from 'sonner';
-import Masonry, { ResponsiveMasonry } from "react-responsive-masonry";
 import { 
   ArrowLeft, Upload, Image as ImageIcon, Video, Star, Eye, 
   Trash2, EyeOff, Search, PlayCircle, HardDrive, Loader2
@@ -425,27 +424,27 @@ export const GalleryAdmin: React.FC<GalleryAdminProps> = ({ onNavigate }) => {
             </Button>
           </div>
         ) : (
-          <ResponsiveMasonry columnsCountBreakPoints={{350: 1, 750: 2, 900: 3, 1200: 4}}>
-            <Masonry gutter="16px">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
               {filteredMedia.map((item) => (
-                <div key={item.id} className="group relative break-inside-avoid">
+                <div key={item.id} className="group relative min-w-0">
                   <div className={cn(
-                    "relative overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800 border transition-all hover:shadow-md",
+                    "relative aspect-[4/3] overflow-hidden rounded-lg bg-slate-100 dark:bg-slate-800 border transition-all hover:shadow-md",
                     item.isVisible ? "border-slate-200 dark:border-slate-700" : "border-dashed border-slate-300 opacity-60"
                   )}>
                     {item.type === 'image' ? (
                       <img 
                         src={item.url} 
                         alt={item.caption}
-                        className="w-full h-auto object-cover"
+                        className="w-full h-full object-cover"
                         loading="lazy"
                       />
                     ) : (
-                      <div className="relative aspect-video">
+                      <div className="relative h-full w-full">
                         <img 
                           src={item.thumbnail || item.url} 
                           alt={item.caption}
                           className="w-full h-full object-cover"
+                          loading="lazy"
                         />
                         <div className="absolute inset-0 flex items-center justify-center bg-black/20 group-hover:bg-black/10 transition-colors">
                           <PlayCircle className="w-10 h-10 text-white opacity-90" />
@@ -505,8 +504,7 @@ export const GalleryAdmin: React.FC<GalleryAdminProps> = ({ onNavigate }) => {
                   </div>
                 </div>
               ))}
-            </Masonry>
-          </ResponsiveMasonry>
+          </div>
         )}
       </main>
     </div>

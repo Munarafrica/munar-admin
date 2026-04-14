@@ -20,8 +20,8 @@ import {
   PublicTicketTypesEndpointResponse,
   PublishedWebsiteOverviewResponse,
 } from '../types/api';
-import { TicketType, Attendee } from '../components/event-dashboard/types';
-import { delay, mockTickets, mockAttendees, generateId } from './mock/data';
+import { TicketType, Attendee, TicketScannerBooth, TicketScanRecord } from '../components/event-dashboard/types';
+import { delay, mockTickets, mockAttendees, mockTicketScannerBooths, mockTicketScanRecords, generateId } from './mock/data';
 
 const TICKET_ORDER_STORAGE_KEY = 'munar_active_ticket_order_id';
 
@@ -257,6 +257,46 @@ function normalizeAttendee(raw: any): Attendee {
     qrCode: raw.badgeCode || raw.qrCode || '',
     questionAnswers: raw.questionAnswers,
     metadata: raw.metadataJson || raw.metadata,
+  };
+}
+
+function normalizeScannerBooth(raw: any, fallbackEventId?: string): TicketScannerBooth {
+  const assignedScanner = raw.assignedScanner || raw.scanner || {};
+  const status = raw.status === 'ACTIVE' || raw.status === 'INACTIVE' ? raw.status : 'UNCLAIMED';
+
+  return {
+    id: raw.id,
+    eventId: raw.eventId || fallbackEventId || '',
+    name: raw.name || 'Booth',
+    status,
+    pairingToken: raw.pairingToken || raw.token || '',
+    pairingUrl: raw.pairingUrl || raw.qrCodeUrl || raw.qrUrl,
+    assignedScannerName: raw.assignedScannerName || assignedScanner.name,
+    assignedScannerEmail: raw.assignedScannerEmail || assignedScanner.email,
+    assignedScannerPhone: raw.assignedScannerPhone || assignedScanner.phone,
+    linkedAt: raw.linkedAt || raw.claimedAt || null,
+    totalScans: raw.totalScans ?? raw.scanCount ?? 0,
+    lastScanAt: raw.lastScanAt || null,
+    createdAt: raw.createdAt || new Date().toISOString(),
+  };
+}
+
+function normalizeScanRecord(raw: any, fallbackEventId?: string): TicketScanRecord {
+  const attendee = raw.attendee || {};
+  const booth = raw.booth || raw.scannerBooth || {};
+
+  return {
+    id: raw.id,
+    eventId: raw.eventId || fallbackEventId || '',
+    boothId: raw.boothId || raw.scannerBoothId || booth.id || '',
+    boothName: raw.boothName || booth.name || 'Booth',
+    attendeeId: raw.attendeeId || attendee.id || '',
+    attendeeName: raw.attendeeName || attendee.fullName || attendee.name || 'Unnamed attendee',
+    attendeeEmail: raw.attendeeEmail || attendee.email,
+    ticketTypeName: raw.ticketTypeName || raw.ticketType?.name || attendee.ticketTypeName || '',
+    scannedAt: raw.scannedAt || raw.createdAt || new Date().toISOString(),
+    result: raw.result === 'DUPLICATE' || raw.result === 'INVALID' ? raw.result : 'VALID',
+    scannerName: raw.scannerName || raw.assignedScannerName || raw.scanner?.name,
   };
 }
 
@@ -519,6 +559,75 @@ class TicketsService {
         accessRulesJson: { sortOrder: index },
       }),
     ));
+  }
+
+  // ══════════════════════════════════════════════════════════
+  //  SCANNER BOOTHS
+  // ══════════════════════════════════════════════════════════
+
+  async getScannerBooths(eventId: string): Promise<TicketScannerBooth[]> {
+    if (config.features.useMockData) {
+      await delay(350);
+      return mockTicketScannerBooths.filter((booth) => booth.eventId === eventId);
+    }
+    const response = await apiClient.get<ApiResponse<any[]> | any[]>(`/events/${eventId}/scanner-booths`);
+    const data = Array.isArray(response) ? response : response.data;
+    return (data || []).map((booth) => normalizeScannerBooth(booth, eventId));
+  }
+
+  async createScannerBooth(eventId: string): Promise<TicketScannerBooth> {
+    if (config.features.useMockData) {
+      await delay(500);
+      const nextNumber = mockTicketScannerBooths
+        .filter((booth) => booth.eventId === eventId)
+        .reduce((max, booth) => {
+          const match = booth.name.match(/^Booth\s+(\d+)$/i);
+          return Math.max(max, match ? Number(match[1]) : 0);
+        }, 0) + 1;
+      const id = generateId('booth');
+      const pairingToken = `${eventId}-${id}-pairing-token`;
+      const booth: TicketScannerBooth = {
+        id,
+        eventId,
+        name: `Booth ${nextNumber}`,
+        status: 'UNCLAIMED',
+        pairingToken,
+        pairingUrl: `https://app.munar.co/scanner/pair/${pairingToken}`,
+        linkedAt: null,
+        totalScans: 0,
+        lastScanAt: null,
+        createdAt: new Date().toISOString(),
+      };
+      mockTicketScannerBooths.push(booth);
+      return booth;
+    }
+    const response = await apiClient.post<ApiResponse<any> | any>(`/events/${eventId}/scanner-booths`, {});
+    return normalizeScannerBooth(unwrapPayloadResponse(response), eventId);
+  }
+
+  async deleteScannerBooth(eventId: string, boothId: string): Promise<void> {
+    if (config.features.useMockData) {
+      await delay(350);
+      const index = mockTicketScannerBooths.findIndex((booth) => booth.id === boothId && booth.eventId === eventId);
+      if (index === -1) throw new Error('Booth not found');
+      mockTicketScannerBooths.splice(index, 1);
+      return;
+    }
+    await apiClient.delete(`/scanner-booths/${boothId}`);
+  }
+
+  async getScannerBoothScans(eventId: string, boothId?: string): Promise<TicketScanRecord[]> {
+    if (config.features.useMockData) {
+      await delay(350);
+      return mockTicketScanRecords
+        .filter((scan) => scan.eventId === eventId && (!boothId || scan.boothId === boothId))
+        .sort((a, b) => new Date(b.scannedAt).getTime() - new Date(a.scannedAt).getTime());
+    }
+    const response = await apiClient.get<ApiResponse<any[]> | any[]>(`/events/${eventId}/scanner-booth-scans`, {
+      params: boothId ? { boothId } : undefined,
+    });
+    const data = Array.isArray(response) ? response : response.data;
+    return (data || []).map((scan) => normalizeScanRecord(scan, eventId));
   }
 
   // ══════════════════════════════════════════════════════════

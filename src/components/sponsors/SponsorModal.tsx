@@ -131,8 +131,11 @@ export const SponsorModal: React.FC<SponsorModalProps> = ({ open, onOpenChange, 
                 maxSizeMB={4}
                 placeholder="Click to upload logo"
                 altText={name.trim() ? `${name.trim()} logo` : undefined}
+                accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+                acceptedMimeTypes={['image/jpeg', 'image/jpg', 'image/png', 'image/webp']}
+                typeHint="JPG, JPEG, PNG, WebP"
               />
-              <p className="text-xs text-slate-500 dark:text-slate-400">Recommended: 430x215 PNG/SVG with transparent background.</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400">Recommended: 430x215 JPG, JPEG, PNG, or WebP with transparent background where supported.</p>
             </div>
 
             {logoUrl && (

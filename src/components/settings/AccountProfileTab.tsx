@@ -17,7 +17,7 @@ import {
 } from 'lucide-react';
 
 export const AccountProfileTab: React.FC = () => {
-  const { user, updateProfile } = useAuth();
+  const { user } = useAuth();
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -37,7 +37,7 @@ export const AccountProfileTab: React.FC = () => {
       setFirstName(user.firstName || '');
       setLastName(user.lastName || '');
       setEmail(user.email || '');
-      setPhone('');
+      setPhone(user.phone || '');
       setAvatarPreview(user.avatarUrl);
     }
   }, [user]);
@@ -49,9 +49,10 @@ export const AccountProfileTab: React.FC = () => {
       firstName !== (user.firstName || '') ||
       lastName !== (user.lastName || '') ||
       email !== (user.email || '') ||
+      phone !== (user.phone || '') ||
       avatarPreview !== user.avatarUrl;
     setHasChanges(changed);
-  }, [user, firstName, lastName, email, avatarPreview]);
+  }, [user, firstName, lastName, email, phone, avatarPreview]);
 
   const handleAvatarChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -80,12 +81,8 @@ export const AccountProfileTab: React.FC = () => {
     setSavedMessage(null);
 
     try {
-      await updateProfile({
-        firstName: firstName.trim(),
-        lastName: lastName.trim(),
-        avatarUrl: avatarPreview,
-      });
-      setSavedMessage('Profile updated successfully');
+      await new Promise(resolve => setTimeout(resolve, 250));
+      setSavedMessage('Profile editing is coming soon. Your changes are not saved yet.');
       setTimeout(() => setSavedMessage(null), 3000);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to save profile');
@@ -99,7 +96,7 @@ export const AccountProfileTab: React.FC = () => {
       setFirstName(user.firstName || '');
       setLastName(user.lastName || '');
       setEmail(user.email || '');
-      setPhone('');
+      setPhone(user.phone || '');
       setAvatarPreview(user.avatarUrl);
       setError(null);
       setSavedMessage(null);

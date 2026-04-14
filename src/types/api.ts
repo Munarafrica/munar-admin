@@ -116,10 +116,13 @@ export interface MessageResponse {
   message: string;
 }
 
-export interface AuthResponse {
-  user: User;
+export interface AuthTokens {
   accessToken: string;
   refreshToken: string;
+}
+
+export interface AuthResponse extends AuthTokens {
+  user: User;
 }
 
 export interface User {

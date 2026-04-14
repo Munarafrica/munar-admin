@@ -1,5 +1,6 @@
 // Data & Exports settings tab
 import React, { useState, useEffect, useCallback } from 'react';
+import { config } from '../../config';
 import { ExportType, ExportFormat, ExportRecord } from '../../types/settings';
 import * as settingsService from '../../services/settings.service';
 import { Button } from '../ui/button';
@@ -59,6 +60,7 @@ const EXPORT_TYPE_LABELS: Record<ExportType, string> = {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export const DataExportsTab: React.FC = () => {
+  const exportGenerationAvailable = config.features.useMockData;
   // Events for selector
   const [events, setEvents] = useState<{ id: string; name: string }[]>([]);
   const [selectedEventId, setSelectedEventId] = useState('');
@@ -128,7 +130,7 @@ export const DataExportsTab: React.FC = () => {
       <div>
         <h2 className="text-xl font-bold text-slate-900 dark:text-slate-100">Data & Exports</h2>
         <p className="text-sm text-slate-500 dark:text-slate-400 mt-1">
-          Export your event data in CSV or Excel format
+          Export your event data when backend export generation is available
         </p>
       </div>
 
@@ -178,15 +180,16 @@ export const DataExportsTab: React.FC = () => {
                 <button
                   key={fmt.value}
                   onClick={() => setSelectedFormat(fmt.value)}
+                  disabled={fmt.value === 'xlsx'}
                   className={cn(
-                    'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all',
+                    'flex-1 flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg border text-sm font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed',
                     selectedFormat === fmt.value
                       ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 text-indigo-700 dark:text-indigo-300 ring-1 ring-indigo-500'
                       : 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 hover:border-slate-300 dark:hover:border-slate-600',
                   )}
                 >
                   <fmt.icon className="w-4 h-4" />
-                  {fmt.label}
+                  {fmt.label}{fmt.value === 'xlsx' ? ' (coming soon)' : ''}
                 </button>
               ))}
             </div>
@@ -200,7 +203,7 @@ export const DataExportsTab: React.FC = () => {
           <button
             key={exp.type}
             onClick={() => handleExport(exp.type)}
-            disabled={!selectedEventId || exportingType !== null}
+            disabled={!selectedEventId || exportingType !== null || !exportGenerationAvailable}
             className={cn(
               'flex items-center gap-4 p-5 rounded-xl border text-left transition-all',
               'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800',
@@ -218,7 +221,9 @@ export const DataExportsTab: React.FC = () => {
             </div>
             <div className="min-w-0">
               <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{exp.label}</p>
-              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">{exp.description}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 truncate">
+                {exportGenerationAvailable ? exp.description : 'Backend export generation is coming soon'}
+              </p>
             </div>
             <Download className="w-4 h-4 text-slate-300 dark:text-slate-600 ml-auto shrink-0 group-hover:text-indigo-500 dark:group-hover:text-indigo-400 transition-colors" />
           </button>

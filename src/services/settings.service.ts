@@ -1,7 +1,8 @@
-// Settings service — manages organizations, notifications, security, and exports
+// Settings service — only calls settings-related endpoints that exist today.
 import { config } from '../config';
+import { unwrap } from '../helpers/auth.helpers';
 import { apiClient } from '../lib/api-client';
-import { ApiResponse } from '../types/api';
+import { ApiResponse, TenantSummary, User } from '../types/api';
 import {
   Organization,
   CreateOrganizationRequest,
@@ -29,6 +30,68 @@ import {
   delay,
 } from './mock/settings-data';
 
+type ApiEnvelope<T> = ApiResponse<T> | T;
+type TwoFactorChannel = 'EMAIL' | 'PHONE';
+
+type TwoFactorSettingsResponse = {
+  enabled: boolean;
+  channel: TwoFactorChannel | null;
+};
+
+type TenantResponse = TenantSummary & {
+  members?: unknown[];
+  eventsCount?: number;
+};
+
+const COMING_SOON_MESSAGE = 'This settings action needs a backend endpoint before it can be saved.';
+const NOTIFICATION_SETTINGS_KEY = 'munar_notification_settings_draft';
+
+function activeTenantId(): string | null {
+  return localStorage.getItem(config.auth.activeTenantKey);
+}
+
+function tenantToOrganization(tenant: TenantSummary | TenantResponse): Organization {
+  const branding = tenant.brandingJson ?? {};
+  const settings = tenant.settingsJson ?? {};
+
+  return {
+    id: tenant.id,
+    name: tenant.name,
+    type: tenant.tenantType === 'INDIVIDUAL' ? 'individual' : 'organization',
+    logoUrl: typeof branding.logoUrl === 'string' ? branding.logoUrl : undefined,
+    country: typeof settings.country === 'string' ? settings.country : undefined,
+    website: typeof settings.website === 'string' ? settings.website : undefined,
+    businessAddress: typeof settings.businessAddress === 'string' ? settings.businessAddress : undefined,
+    primaryColor: typeof branding.primaryColor === 'string' ? branding.primaryColor : '#6366F1',
+    secondaryColor: typeof branding.secondaryColor === 'string' ? branding.secondaryColor : '#8B5CF6',
+    defaultEmailSenderName: typeof settings.defaultEmailSenderName === 'string' ? settings.defaultEmailSenderName : tenant.name,
+    eventsCount: typeof (tenant as TenantResponse).eventsCount === 'number' ? (tenant as TenantResponse).eventsCount! : 0,
+    createdAt: tenant.createdAt ?? new Date().toISOString(),
+    updatedAt: tenant.updatedAt ?? tenant.createdAt ?? new Date().toISOString(),
+  };
+}
+
+function organizationToTenantPayload(data: UpdateOrganizationRequest, existing?: TenantResponse) {
+  const brandingJson: Record<string, unknown> = { ...(existing?.brandingJson ?? {}) };
+  const settingsJson: Record<string, unknown> = { ...(existing?.settingsJson ?? {}) };
+  const hasBrandingUpdate = data.logoUrl !== undefined || data.primaryColor !== undefined || data.secondaryColor !== undefined;
+  const hasSettingsUpdate = data.country !== undefined || data.website !== undefined || data.businessAddress !== undefined || data.defaultEmailSenderName !== undefined;
+
+  if (data.logoUrl !== undefined) brandingJson.logoUrl = data.logoUrl;
+  if (data.primaryColor !== undefined) brandingJson.primaryColor = data.primaryColor;
+  if (data.secondaryColor !== undefined) brandingJson.secondaryColor = data.secondaryColor;
+  if (data.country !== undefined) settingsJson.country = data.country;
+  if (data.website !== undefined) settingsJson.website = data.website;
+  if (data.businessAddress !== undefined) settingsJson.businessAddress = data.businessAddress;
+  if (data.defaultEmailSenderName !== undefined) settingsJson.defaultEmailSenderName = data.defaultEmailSenderName;
+
+  return {
+    ...(data.name !== undefined ? { name: data.name } : {}),
+    ...(hasBrandingUpdate ? { brandingJson } : {}),
+    ...(hasSettingsUpdate ? { settingsJson } : {}),
+  };
+}
+
 // ─── Organizations ───────────────────────────────────────────────────────────
 
 export async function getOrganizations(): Promise<Organization[]> {
@@ -36,8 +99,17 @@ export async function getOrganizations(): Promise<Organization[]> {
     await delay(400);
     return getMockOrganizations();
   }
-  const res = await apiClient.get<ApiResponse<Organization[]>>('/organizations');
-  return res.data;
+
+  const user = unwrap(await apiClient.get<ApiEnvelope<User>>('/auth/me'));
+  const memberships = user.memberships ?? [];
+  const selectedTenantId = activeTenantId() ?? memberships[0]?.tenant.id;
+
+  if (!selectedTenantId) {
+    return [];
+  }
+
+  const tenant = unwrap(await apiClient.get<ApiEnvelope<TenantResponse>>(`/tenants/${selectedTenantId}`));
+  return [tenantToOrganization(tenant)];
 }
 
 export async function getOrganization(id: string): Promise<Organization> {
@@ -47,8 +119,9 @@ export async function getOrganization(id: string): Promise<Organization> {
     if (!org) throw new Error('Organization not found');
     return org;
   }
-  const res = await apiClient.get<ApiResponse<Organization>>(`/organizations/${id}`);
-  return res.data;
+
+  const tenant = unwrap(await apiClient.get<ApiEnvelope<TenantResponse>>(`/tenants/${id}`));
+  return tenantToOrganization(tenant);
 }
 
 export async function createOrganization(data: CreateOrganizationRequest): Promise<Organization> {
@@ -60,8 +133,8 @@ export async function createOrganization(data: CreateOrganizationRequest): Promi
       secondaryColor: '#8B5CF6',
     });
   }
-  const res = await apiClient.post<ApiResponse<Organization>>('/organizations', data);
-  return res.data;
+
+  throw new Error('Organization creation is not available from Settings yet. Use onboarding to create a workspace.');
 }
 
 export async function updateOrganization(id: string, data: UpdateOrganizationRequest): Promise<Organization> {
@@ -71,8 +144,12 @@ export async function updateOrganization(id: string, data: UpdateOrganizationReq
     if (!updated) throw new Error('Organization not found');
     return updated;
   }
-  const res = await apiClient.patch<ApiResponse<Organization>>(`/organizations/${id}`, data);
-  return res.data;
+
+  const existing = unwrap(await apiClient.get<ApiEnvelope<TenantResponse>>(`/tenants/${id}`));
+  const tenant = unwrap(
+    await apiClient.patch<ApiEnvelope<TenantResponse>>(`/tenants/${id}`, organizationToTenantPayload(data, existing)),
+  );
+  return tenantToOrganization(tenant);
 }
 
 export async function deleteOrganization(id: string): Promise<void> {
@@ -81,7 +158,8 @@ export async function deleteOrganization(id: string): Promise<void> {
     deleteMockOrganization(id);
     return;
   }
-  await apiClient.delete(`/organizations/${id}`);
+
+  throw new Error('Organization deletion is not available from Settings yet.');
 }
 
 // ─── Notifications ───────────────────────────────────────────────────────────
@@ -91,8 +169,9 @@ export async function getNotificationSettings(): Promise<NotificationSettings> {
     await delay(300);
     return getMockNotificationSettings();
   }
-  const res = await apiClient.get<ApiResponse<NotificationSettings>>('/settings/notifications');
-  return res.data;
+
+  const saved = localStorage.getItem(NOTIFICATION_SETTINGS_KEY);
+  return saved ? JSON.parse(saved) as NotificationSettings : getMockNotificationSettings();
 }
 
 export async function saveNotificationSettings(data: NotificationSettings): Promise<NotificationSettings> {
@@ -100,8 +179,9 @@ export async function saveNotificationSettings(data: NotificationSettings): Prom
     await delay(400);
     return updateMockNotificationSettings(data);
   }
-  const res = await apiClient.put<ApiResponse<NotificationSettings>>('/settings/notifications', data);
-  return res.data;
+
+  localStorage.setItem(NOTIFICATION_SETTINGS_KEY, JSON.stringify(data));
+  throw new Error('Notification preference saving needs GET/PUT /settings/notifications on the backend.');
 }
 
 // ─── Security ────────────────────────────────────────────────────────────────
@@ -111,16 +191,12 @@ export async function getActiveSessions(): Promise<ActiveSession[]> {
     await delay(300);
     return getMockSessions();
   }
-  const res = await apiClient.get<ApiResponse<ActiveSession[]>>('/settings/security/sessions');
-  return res.data;
+
+  return [];
 }
 
-export async function revokeSession(sessionId: string): Promise<void> {
-  if (config.features.useMockData) {
-    await delay(400);
-    return;
-  }
-  await apiClient.delete(`/settings/security/sessions/${sessionId}`);
+export async function revokeSession(_sessionId: string): Promise<void> {
+  throw new Error(COMING_SOON_MESSAGE);
 }
 
 export async function getSecuritySettings(): Promise<SecuritySettings> {
@@ -128,8 +204,16 @@ export async function getSecuritySettings(): Promise<SecuritySettings> {
     await delay(200);
     return getMockSecuritySettings();
   }
-  const res = await apiClient.get<ApiResponse<SecuritySettings>>('/settings/security');
-  return res.data;
+
+  const twoFactor = unwrap(
+    await apiClient.get<ApiEnvelope<TwoFactorSettingsResponse>>('/auth/2fa-settings'),
+  );
+
+  return {
+    loginAlerts: true,
+    twoFactorEnabled: twoFactor.enabled,
+    twoFactorChannel: twoFactor.channel,
+  };
 }
 
 export async function saveSecuritySettings(data: Partial<SecuritySettings>): Promise<SecuritySettings> {
@@ -137,8 +221,23 @@ export async function saveSecuritySettings(data: Partial<SecuritySettings>): Pro
     await delay(300);
     return updateMockSecuritySettings(data);
   }
-  const res = await apiClient.put<ApiResponse<SecuritySettings>>('/settings/security', data);
-  return res.data;
+
+  if (data.twoFactorEnabled === undefined) {
+    throw new Error('Login alert saving needs PATCH /settings/security/login-alerts on the backend.');
+  }
+
+  const twoFactor = unwrap(
+    await apiClient.patch<ApiEnvelope<TwoFactorSettingsResponse>>('/auth/2fa-settings', {
+      enabled: data.twoFactorEnabled,
+      channel: data.twoFactorChannel ?? 'EMAIL',
+    }),
+  );
+
+  return {
+    loginAlerts: data.loginAlerts ?? true,
+    twoFactorEnabled: twoFactor.enabled,
+    twoFactorChannel: twoFactor.channel,
+  };
 }
 
 // ─── Data & Exports ──────────────────────────────────────────────────────────
@@ -148,8 +247,13 @@ export async function getEventsForExport(): Promise<{ id: string; name: string }
     await delay(200);
     return getMockEventsForExport();
   }
-  const res = await apiClient.get<ApiResponse<{ id: string; name: string }[]>>('/settings/exports/events');
-  return res.data;
+
+  const tenantId = activeTenantId();
+  if (!tenantId) return [];
+
+  const response = await apiClient.get<ApiEnvelope<Array<{ id: string; name: string }>>>(`/tenants/${tenantId}/events`);
+  const events = unwrap(response);
+  return events.map(event => ({ id: event.id, name: event.name }));
 }
 
 export async function requestExport(data: ExportRequest): Promise<ExportRecord> {
@@ -168,8 +272,8 @@ export async function requestExport(data: ExportRequest): Promise<ExportRecord> 
       fileSizeBytes: Math.floor(Math.random() * 500_000) + 50_000,
     });
   }
-  const res = await apiClient.post<ApiResponse<ExportRecord>>('/settings/exports', data);
-  return res.data;
+
+  throw new Error('Data export generation needs the backend data export endpoint before it can run.');
 }
 
 export async function getExportHistory(): Promise<ExportRecord[]> {
@@ -177,16 +281,12 @@ export async function getExportHistory(): Promise<ExportRecord[]> {
     await delay(300);
     return getMockExports();
   }
-  const res = await apiClient.get<ApiResponse<ExportRecord[]>>('/settings/exports');
-  return res.data;
+
+  return [];
 }
 
 // ─── Account Deletion ────────────────────────────────────────────────────────
 
 export async function deleteAccount(): Promise<void> {
-  if (config.features.useMockData) {
-    await delay(1000);
-    return;
-  }
-  await apiClient.delete('/account');
+  throw new Error('Account deletion needs the backend account deletion flow before it can run.');
 }

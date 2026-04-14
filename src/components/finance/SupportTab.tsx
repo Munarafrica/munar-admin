@@ -80,11 +80,11 @@ export const SupportTab: React.FC<SupportTabProps> = ({
 }) => {
   const { disputes, isLoading, submitDispute, refetch } = useDisputes();
   const { payouts } = usePayouts();
-  const [isFormOpen, setIsFormOpen] = useState(!!initialPayoutId);
+  const [isFormOpen, setIsFormOpen] = useState(false);
   const [selectedDispute, setSelectedDispute] = useState<Dispute | null>(null);
 
   const handleOpenForm = () => {
-    setIsFormOpen(true);
+    toast.info('Finance dispute reporting needs a backend endpoint before it can be submitted.');
   };
 
   const handleCloseForm = () => {
@@ -123,9 +123,9 @@ export const SupportTab: React.FC<SupportTabProps> = ({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6">
         <div>
           <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Support & Disputes</h3>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
@@ -134,12 +134,25 @@ export const SupportTab: React.FC<SupportTabProps> = ({
         </div>
         <Button
           onClick={handleOpenForm}
-          className="bg-red-600 hover:bg-red-700 text-white gap-2 shadow-sm"
+          disabled
+          title="Finance dispute reporting needs a backend endpoint before it can be submitted."
+          className="bg-red-600 hover:bg-red-700 text-white gap-2 shadow-sm disabled:opacity-60"
         >
           <AlertTriangle className="w-4 h-4" />
           Report Payout Issue
         </Button>
       </div>
+
+      {initialPayoutId && (
+        <div className="p-5 rounded-xl bg-amber-50 dark:bg-amber-900/10 border border-amber-100 dark:border-amber-800/30">
+          <p className="text-sm font-medium text-amber-900 dark:text-amber-200">
+            Reporting is not connected yet
+          </p>
+          <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+            Payout issue reporting for {initialPayoutId} needs a backend dispute endpoint before it can be submitted.
+          </p>
+        </div>
+      )}
 
       {/* Disputes List */}
       {isLoading ? (
@@ -149,7 +162,7 @@ export const SupportTab: React.FC<SupportTabProps> = ({
           ))}
         </div>
       ) : disputes.length === 0 ? (
-        <div className="flex flex-col items-center justify-center py-16 text-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
+        <div className="flex flex-col items-center justify-center px-6 py-20 text-center bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800">
           <div className="p-4 rounded-2xl bg-slate-100 dark:bg-slate-800 mb-4">
             <MessageSquare className="w-8 h-8 text-slate-400 dark:text-slate-500" />
           </div>
@@ -159,12 +172,12 @@ export const SupportTab: React.FC<SupportTabProps> = ({
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
+        <div className="space-y-4">
           {disputes.map(dispute => (
             <button
               key={dispute.id}
               onClick={() => setSelectedDispute(dispute)}
-              className="w-full text-left bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
+              className="w-full text-left bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
             >
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
                 <div className="flex items-center gap-3">
@@ -201,7 +214,7 @@ export const SupportTab: React.FC<SupportTabProps> = ({
 
 function DisputeDetail({ dispute, onBack }: { dispute: Dispute; onBack: () => void }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <button
         onClick={onBack}
         className="flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors font-medium"
@@ -210,7 +223,7 @@ function DisputeDetail({ dispute, onBack }: { dispute: Dispute; onBack: () => vo
         Back to Disputes
       </button>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-6">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8 space-y-7">
         {/* Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
@@ -392,7 +405,7 @@ function DisputeForm({
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       <button
         onClick={onClose}
         className="flex items-center gap-1 text-sm text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 transition-colors font-medium"
@@ -401,13 +414,13 @@ function DisputeForm({
         Back to Disputes
       </button>
 
-      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6">
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 sm:p-8">
         <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100 mb-1">Report Payout Issue</h3>
         <p className="text-sm text-slate-500 dark:text-slate-400 mb-6">
           Describe the issue and our team will investigate. We typically respond within 1-3 business days.
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
+        <form onSubmit={handleSubmit} className="space-y-6">
           {/* Payout ID */}
           <div>
             <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">

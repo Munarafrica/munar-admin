@@ -24,6 +24,8 @@ export type Page =
   | 'event-dashboard'
   | 'ticket-management'
   | 'program-management'
+  | 'program-schedule-management'
+  | 'program-speakers-management'
   | 'form-management'
   | 'merchandise-management'
   | 'voting-management'

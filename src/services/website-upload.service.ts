@@ -43,6 +43,8 @@ export interface UploadProgress {
   percentage: number;
 }
 
+type UploadableWebsiteAssetCategory = WebsiteAssetCategory;
+
 const CATEGORY_RULES: Record<WebsiteAssetCategory, { maxSize: number; validTypes: string[] }> = {
   hero: { maxSize: 10 * 1024 * 1024, validTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'] },
   section: { maxSize: 8 * 1024 * 1024, validTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/svg+xml'] },
@@ -51,6 +53,34 @@ const CATEGORY_RULES: Record<WebsiteAssetCategory, { maxSize: number; validTypes
   seo: { maxSize: 5 * 1024 * 1024, validTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp'] },
   'custom-block': { maxSize: 8 * 1024 * 1024, validTypes: ['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/svg+xml'] },
 };
+
+const MIME_TYPE_BY_EXTENSION: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  svg: 'image/svg+xml',
+};
+
+function getImageMimeType(file: File): string {
+  const extension = file.name.split('.').pop()?.toLowerCase();
+  if (extension === 'jpg') return 'image/jpg';
+  if (extension && MIME_TYPE_BY_EXTENSION[extension]) return MIME_TYPE_BY_EXTENSION[extension];
+
+  const normalizedType = file.type === 'image/jpg' || file.type === 'image/pjpeg'
+    ? 'image/jpeg'
+    : file.type;
+
+  if (normalizedType) return normalizedType;
+
+  return '';
+}
+
+function shouldRetryLogoUploadAsSection(error: unknown, category: WebsiteAssetCategory, mimeType: string): boolean {
+  if (category !== 'logo') return false;
+  if (mimeType !== 'image/jpeg' && mimeType !== 'image/jpg') return false;
+  return error instanceof Error && error.message.toLowerCase().includes('unsupported file type');
+}
 
 function toAssetRef(asset: WebsiteAssetUploadResponse): WebsiteAssetRef {
   return {
@@ -129,6 +159,7 @@ export const websiteUploadService = {
     category: WebsiteAssetCategory = 'custom-block',
     altText?: string,
   ): Promise<WebsiteAssetUploadResponse> {
+    const mimeType = getImageMimeType(file);
     const validationError = this.validateImage(file, category);
     if (validationError) {
       throw new Error(validationError);
@@ -136,20 +167,40 @@ export const websiteUploadService = {
 
     const { width, height } = await this.getImageDimensions(file).catch(() => ({ width: undefined, height: undefined }));
 
-    const signed = await apiClient.post<SignedUploadResponse>(
-      `/events/${eventId}/website/assets/sign`,
-      {
-        filename: file.name,
-        mimeType: file.type,
-        sizeBytes: file.size,
-        category,
+    let uploadCategory: UploadableWebsiteAssetCategory = category;
+    let signed: SignedUploadResponse;
+
+    try {
+      signed = await apiClient.post<SignedUploadResponse>(
+        `/events/${eventId}/website/assets/sign`,
+        {
+          filename: file.name,
+          mimeType,
+          sizeBytes: file.size,
+          category: uploadCategory,
+        }
+      );
+    } catch (error) {
+      if (!shouldRetryLogoUploadAsSection(error, category, mimeType)) {
+        throw error;
       }
-    );
+
+      uploadCategory = 'section';
+      signed = await apiClient.post<SignedUploadResponse>(
+        `/events/${eventId}/website/assets/sign`,
+        {
+          filename: file.name,
+          mimeType,
+          sizeBytes: file.size,
+          category: uploadCategory,
+        }
+      );
+    }
 
     const uploadResponse = await fetch(signed.uploadUrl, {
       method: 'PUT',
       headers: {
-        'Content-Type': file.type,
+        'Content-Type': mimeType,
         ...(signed.headers || {}),
       },
       body: file,
@@ -163,9 +214,9 @@ export const websiteUploadService = {
       `/events/${eventId}/website/assets`,
       {
         assetId: signed.assetId,
-        category,
+        category: uploadCategory,
         url: signed.publicUrl,
-        mimeType: file.type,
+        mimeType,
         sizeBytes: file.size,
         width,
         height,
@@ -270,9 +321,10 @@ export const websiteUploadService = {
    * Validate an image file before upload
    * @returns An error message if invalid, or null if valid
    */
-  validateImage(file: File, category: WebsiteAssetCategory = 'custom-block'): string | null {
+  validateImage(file: File, category: WebsiteAssetCategory = 'custom-block', validTypes = CATEGORY_RULES[category].validTypes): string | null {
     const rules = CATEGORY_RULES[category];
-    if (!rules.validTypes.includes(file.type)) {
+    const mimeType = getImageMimeType(file);
+    if (!validTypes.includes(mimeType)) {
       return `Invalid file type for ${category} images.`;
     }
 

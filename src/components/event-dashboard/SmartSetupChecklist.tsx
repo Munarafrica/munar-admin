@@ -14,7 +14,7 @@ interface SmartSetupChecklistProps {
 const checklistRoutes: Record<string, import('../../App').Page> = {
   tickets: 'ticket-management',
   website: 'event-dashboard',
-  schedule: 'program-management',
+  schedule: 'program-schedule-management',
   sponsors: 'sponsors-management',
   forms: 'form-management',
   gallery: 'gallery-admin',

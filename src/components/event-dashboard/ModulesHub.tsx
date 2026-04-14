@@ -59,8 +59,10 @@ export const ModulesHub: React.FC<ModulesHubProps> = ({ modules, onNavigate }) =
   const handleModuleClick = (moduleName: string) => {
     if (moduleName === 'Tickets') {
         onNavigate?.('ticket-management');
-    } else if (moduleName === 'Schedule & Agenda' || moduleName === 'People & Speakers') {
-        onNavigate?.('program-management');
+    } else if (moduleName === 'Schedule & Agenda') {
+        onNavigate?.('program-schedule-management');
+    } else if (moduleName === 'People & Speakers') {
+        onNavigate?.('program-speakers-management');
     } else if (moduleName === 'Forms and surveys') {
         onNavigate?.('form-management');
     } else if (moduleName === 'Sponsors') {

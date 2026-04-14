@@ -1,9 +1,8 @@
 import React, { useState } from 'react';
 import { TopBar } from "../components/dashboard/TopBar";
-import { Page, Speaker, Session } from "../components/event-dashboard/types";
+import { Speaker, Session } from "../components/event-dashboard/types";
 import { Button } from "../components/ui/button";
-import { Users, Calendar, ChevronLeft, Loader2 } from 'lucide-react';
-import { cn } from "../components/ui/utils";
+import { ChevronLeft } from 'lucide-react';
 import { SpeakersTab } from "../components/event-dashboard/program/SpeakersTab";
 import { ScheduleTab } from "../components/event-dashboard/program/ScheduleTab";
 import { eventsService } from "../services";
@@ -11,13 +10,22 @@ import { useEventId } from "../lib/navigation";
 import { useProgram } from "../hooks/useProgram";
 import { useEvent } from "../contexts";
 import { toast } from 'sonner';
+import { Page } from "../App";
 
 interface ProgramManagementProps {
   onNavigate?: (page: Page) => void;
+  mode?: 'schedule' | 'speakers';
 }
 
-export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate }) => {
-  const [activeTab, setActiveTab] = useState<'speakers' | 'schedule'>('speakers');
+export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate, mode = 'schedule' }) => {
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    name: string;
+    type: 'speaker' | 'session';
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const isSpeakersMode = mode === 'speakers';
+  const pageTitle = isSpeakersMode ? 'People & Speakers' : 'Schedule & Agenda';
   const eventId = useEventId();
   const { currentEvent } = useEvent();
 
@@ -55,11 +63,12 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
   };
 
   const handleDeleteSpeaker = async (id: string) => {
-    if (!window.confirm('Are you sure? This will remove them from any assigned sessions.')) return;
-    const ok = await deleteSpeaker(id);
-    if (!ok) { toast.error('Failed to delete speaker'); return; }
-    toast.success('Speaker removed');
-    eventsService.updateModuleCount(eventId, 'People & Speakers', Math.max(0, speakers.length - 1), 'Speaker removed', 'mic');
+    const speaker = speakers.find(item => item.id === id);
+    setPendingDelete({
+      id,
+      name: speaker?.name || 'this speaker',
+      type: 'speaker',
+    });
   };
 
   // --- Session Actions ---
@@ -80,11 +89,35 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
   };
 
   const handleDeleteSession = async (id: string) => {
-    if (!window.confirm('Delete this session?')) return;
-    const ok = await deleteSession(id);
-    if (!ok) { toast.error('Failed to delete session'); return; }
-    toast.success('Session removed');
-    eventsService.updateModuleCount(eventId, 'Schedule & Agenda', Math.max(0, sessions.length - 1), 'Session removed', 'calendar');
+    const session = sessions.find(item => item.id === id);
+    setPendingDelete({
+      id,
+      name: session?.title || 'this session',
+      type: 'session',
+    });
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!pendingDelete) return;
+
+    setIsDeleting(true);
+    try {
+      if (pendingDelete.type === 'speaker') {
+        const ok = await deleteSpeaker(pendingDelete.id);
+        if (!ok) { toast.error('Failed to delete speaker'); return; }
+        toast.success('Speaker removed');
+        eventsService.updateModuleCount(eventId, 'People & Speakers', Math.max(0, speakers.length - 1), 'Speaker removed', 'mic');
+      } else {
+        const ok = await deleteSession(pendingDelete.id);
+        if (!ok) { toast.error('Failed to delete session'); return; }
+        toast.success('Session removed');
+        eventsService.updateModuleCount(eventId, 'Schedule & Agenda', Math.max(0, sessions.length - 1), 'Session removed', 'calendar');
+      }
+
+      setPendingDelete(null);
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   return (
@@ -101,7 +134,7 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
                             Back
                         </button>
                     </div>
-                    <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">Program Management</h1>
+                    <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-100">{pageTitle}</h1>
                 </div>
             </div>
 
@@ -111,36 +144,6 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
               </div>
             ) : (
             <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-sm min-h-[600px] flex flex-col transition-colors">
-                {/* Tabs Header */}
-                <div className="border-b border-slate-200 dark:border-slate-800 px-2 flex overflow-x-auto scrollbar-hide">
-                    <button
-                        onClick={() => setActiveTab('speakers')}
-                        className={cn(
-                            "flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-all whitespace-nowrap",
-                            activeTab === 'speakers' 
-                                ? "border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400" 
-                                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700"
-                        )}
-                    >
-                        <Users className="w-4 h-4" />
-                        Speakers
-                        {isLoadingSpeakers && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
-                    </button>
-                    <button
-                        onClick={() => setActiveTab('schedule')}
-                        className={cn(
-                            "flex items-center gap-2 px-6 py-4 text-sm font-medium border-b-2 transition-all whitespace-nowrap",
-                            activeTab === 'schedule' 
-                                ? "border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400" 
-                                : "border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:border-slate-300 dark:hover:border-slate-700"
-                        )}
-                    >
-                        <Calendar className="w-4 h-4" />
-                        Schedule
-                        {isLoadingSessions && <Loader2 className="w-3 h-3 animate-spin ml-1" />}
-                    </button>
-                </div>
-
                 {/* Error banner */}
                 {error && (
                   <div className="mx-6 mt-4 p-3 text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg border border-red-200 dark:border-red-800">
@@ -148,9 +151,9 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
                   </div>
                 )}
 
-                {/* Tab Content */}
+                {/* Module Content */}
                 <div className="p-6 flex-1">
-                    {activeTab === 'speakers' && (
+                    {isSpeakersMode ? (
                         <SpeakersTab 
                             speakers={speakers}
                             sessions={sessions}
@@ -160,9 +163,7 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
                             onDeleteSpeaker={handleDeleteSpeaker}
                             onSearchSpeakers={fetchSpeakers}
                         />
-                    )}
-
-                    {activeTab === 'schedule' && (
+                    ) : (
                         <ScheduleTab
                             sessions={sessions}
                             speakers={speakers}
@@ -171,13 +172,54 @@ export const ProgramManagement: React.FC<ProgramManagementProps> = ({ onNavigate
                             onEditSession={handleEditSession}
                             onDeleteSession={handleDeleteSession}
                             onSearchSessions={fetchSessions}
-                            onManageSpeakers={() => setActiveTab('speakers')}
+                            onManageSpeakers={() => onNavigate?.('program-speakers-management')}
                         />
                     )}
                 </div>
             </div>
             )}
        </main>
+
+       {pendingDelete && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+            <div
+              className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+              onClick={() => {
+                if (!isDeleting) {
+                  setPendingDelete(null);
+                }
+              }}
+            />
+            <div className="relative w-full max-w-md rounded-2xl border border-slate-200 bg-white shadow-2xl dark:border-slate-800 dark:bg-slate-950">
+              <div className="border-b border-slate-100 px-6 py-8 dark:border-slate-800">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">
+                  Delete {pendingDelete.type === 'speaker' ? 'Speaker' : 'Session'}?
+                </h3>
+                <p className="mt-2 text-sm text-slate-600 dark:text-slate-400">
+                  {pendingDelete.type === 'speaker'
+                    ? `This will permanently delete "${pendingDelete.name}" and remove them from any assigned sessions.`
+                    : `This will permanently delete "${pendingDelete.name}" from this event schedule.`}
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-3 px-6 py-4">
+                <Button
+                  variant="outline"
+                  onClick={() => setPendingDelete(null)}
+                  disabled={isDeleting}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  variant="destructive"
+                  onClick={() => void handleConfirmDelete()}
+                  disabled={isDeleting}
+                >
+                  {isDeleting ? 'Deleting...' : `Delete ${pendingDelete.type === 'speaker' ? 'Speaker' : 'Session'}`}
+                </Button>
+              </div>
+            </div>
+          </div>
+       )}
     </div>
   );
 };

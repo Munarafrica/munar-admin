@@ -23,9 +23,11 @@ import { cn } from '../ui/utils';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
-import { usePayouts } from '../../hooks/useFinance';
+import { useBankAccounts, useFinanceOverview, usePayouts } from '../../hooks/useFinance';
 import type { Payout, PayoutStatus } from '../../types/finance';
 import { PAYOUT_STATUS_LABELS } from '../../types/finance';
+import type { CurrencyCode } from '../../types/api';
+import { toast } from 'sonner';
 
 interface PayoutsTabProps {
   onOpenDispute: (payoutId: string) => void;
@@ -37,7 +39,7 @@ function formatCurrency(amount: number, currency = 'NGN'): string {
     currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(amount / 100);
 }
 
 function formatDate(dateStr: string, options?: Intl.DateTimeFormatOptions): string {
@@ -54,6 +56,7 @@ const STATUS_CONFIG: Record<PayoutStatus, { icon: React.ElementType; color: stri
   processing: { icon: Loader2, color: 'amber' },
   completed: { icon: CheckCircle2, color: 'emerald' },
   failed: { icon: XCircle, color: 'red' },
+  cancelled: { icon: XCircle, color: 'slate' },
 };
 
 function StatusBadge({ status }: { status: PayoutStatus }) {
@@ -67,7 +70,8 @@ function StatusBadge({ status }: { status: PayoutStatus }) {
         config.color === 'blue' && 'border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/20',
         config.color === 'amber' && 'border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20',
         config.color === 'emerald' && 'border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20',
-        config.color === 'red' && 'border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20'
+        config.color === 'red' && 'border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20',
+        config.color === 'slate' && 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800'
       )}
     >
       <Icon className={cn('w-3 h-3', status === 'processing' && 'animate-spin')} />
@@ -79,8 +83,13 @@ function StatusBadge({ status }: { status: PayoutStatus }) {
 export const PayoutsTab: React.FC<PayoutsTabProps> = ({ onOpenDispute }) => {
   const [statusFilter, setStatusFilter] = useState<PayoutStatus | ''>('');
   const [selectedPayout, setSelectedPayout] = useState<Payout | null>(null);
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
 
-  const { payouts, isLoading, total, page, totalPages, updateFilters } = usePayouts();
+  const { payouts, isLoading, total, page, totalPages, updateFilters, createPayout } = usePayouts();
+  const { overview } = useFinanceOverview();
+  const { accounts } = useBankAccounts();
+  const defaultAccount = accounts.find(account => account.isDefault) ?? accounts[0];
+  const canCreatePayout = !!overview && overview.availableBalance > 0 && !!defaultAccount;
 
   const handleStatusFilter = (status: PayoutStatus | '') => {
     setStatusFilter(status);
@@ -101,9 +110,9 @@ export const PayoutsTab: React.FC<PayoutsTabProps> = ({ onOpenDispute }) => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header & Filter */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6">
         <div>
           <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Payouts</h3>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
@@ -111,18 +120,29 @@ export const PayoutsTab: React.FC<PayoutsTabProps> = ({ onOpenDispute }) => {
           </p>
         </div>
 
-        <div className="relative">
-          <select
-            value={statusFilter}
-            onChange={e => handleStatusFilter(e.target.value as PayoutStatus | '')}
-            className="appearance-none bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 pr-10 text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+        <div className="flex flex-col sm:flex-row gap-3">
+          <Button
+            onClick={() => setIsCreateOpen(true)}
+            disabled={!canCreatePayout}
+            className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
+            title={!canCreatePayout ? 'Add a payout account and make sure you have an available balance first' : undefined}
           >
-            <option value="">All Statuses</option>
-            {Object.entries(PAYOUT_STATUS_LABELS).map(([key, label]) => (
-              <option key={key} value={key}>{label}</option>
-            ))}
-          </select>
-          <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+            <ArrowUpRight className="w-4 h-4" />
+            Create Payout
+          </Button>
+          <div className="relative">
+            <select
+              value={statusFilter}
+              onChange={e => handleStatusFilter(e.target.value as PayoutStatus | '')}
+              className="appearance-none bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            >
+              <option value="">All Statuses</option>
+              {Object.entries(PAYOUT_STATUS_LABELS).map(([key, label]) => (
+                <option key={key} value={key}>{label}</option>
+              ))}
+            </select>
+            <ChevronDown className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 pointer-events-none" />
+          </div>
         </div>
       </div>
 
@@ -136,28 +156,28 @@ export const PayoutsTab: React.FC<PayoutsTabProps> = ({ onOpenDispute }) => {
       ) : payouts.length === 0 ? (
         <EmptyPayouts />
       ) : (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden p-2">
           {/* Desktop Table */}
-          <div className="hidden md:block overflow-x-auto">
-            <table className="w-full">
+          <div className="hidden md:block overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-800">
+            <table className="w-full min-w-[840px]">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-4 px-5">
                     Payout ID
                   </th>
-                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-4 px-5">
                     Date
                   </th>
-                  <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-4 px-5">
                     Amount
                   </th>
-                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-4 px-5">
                     Destination
                   </th>
-                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-4 px-5">
                     Status
                   </th>
-                  <th className="py-3 px-4"></th>
+                  <th className="py-4 px-5"></th>
                 </tr>
               </thead>
               <tbody>
@@ -167,22 +187,22 @@ export const PayoutsTab: React.FC<PayoutsTabProps> = ({ onOpenDispute }) => {
                     className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors cursor-pointer"
                     onClick={() => setSelectedPayout(payout)}
                   >
-                    <td className="py-3.5 px-4 text-sm font-mono font-medium text-slate-900 dark:text-slate-100">
+                    <td className="py-4 px-5 text-sm font-mono font-medium text-slate-900 dark:text-slate-100">
                       {payout.id}
                     </td>
-                    <td className="py-3.5 px-4 text-sm text-slate-600 dark:text-slate-300">
+                    <td className="py-4 px-5 text-sm text-slate-600 dark:text-slate-300">
                       {formatDate(payout.scheduledDate)}
                     </td>
-                    <td className="py-3.5 px-4 text-sm font-semibold text-slate-900 dark:text-slate-100 text-right">
+                    <td className="py-4 px-5 text-sm font-semibold text-slate-900 dark:text-slate-100 text-right">
                       {formatCurrency(payout.amount)}
                     </td>
-                    <td className="py-3.5 px-4 text-sm text-slate-600 dark:text-slate-300">
+                    <td className="py-4 px-5 text-sm text-slate-600 dark:text-slate-300">
                       {payout.destinationBankName} {payout.destinationAccountNumber}
                     </td>
-                    <td className="py-3.5 px-4">
+                    <td className="py-4 px-5">
                       <StatusBadge status={payout.status} />
                     </td>
-                    <td className="py-3.5 px-4">
+                    <td className="py-4 px-5">
                       <Button variant="ghost" size="sm" className="gap-1 text-slate-500 hover:text-indigo-600">
                         <Eye className="w-4 h-4" />
                         Details
@@ -247,6 +267,28 @@ export const PayoutsTab: React.FC<PayoutsTabProps> = ({ onOpenDispute }) => {
             </Button>
           </div>
         </div>
+      )}
+
+      {isCreateOpen && overview && defaultAccount && (
+        <CreatePayoutModal
+          availableMinor={overview.availableBalance}
+          currency={overview.currency}
+          accountLabel={`${defaultAccount.bankName} ${defaultAccount.accountNumber}`}
+          onClose={() => setIsCreateOpen(false)}
+          onCreate={async (amountMinor) => {
+            try {
+              await createPayout({
+                payoutAccountId: defaultAccount.id,
+                currency: overview.currency as CurrencyCode,
+                amountMinor,
+              });
+              toast.success('Payout queued successfully');
+              setIsCreateOpen(false);
+            } catch (err) {
+              toast.error(err instanceof Error ? err.message : 'Failed to create payout');
+            }
+          }}
+        />
       )}
     </div>
   );
@@ -401,6 +443,97 @@ function EmptyPayouts() {
       <p className="text-sm text-slate-500 dark:text-slate-400 mt-1 max-w-sm">
         Payouts will appear here after your first payout cycle. Funds are transferred weekly.
       </p>
+    </div>
+  );
+}
+
+function CreatePayoutModal({
+  availableMinor,
+  currency,
+  accountLabel,
+  onClose,
+  onCreate,
+}: {
+  availableMinor: number;
+  currency: string;
+  accountLabel: string;
+  onClose: () => void;
+  onCreate: (amountMinor: number) => Promise<void>;
+}) {
+  const [amount, setAmount] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const amountMinor = Math.round((Number(amount) || 0) * 100);
+  const canSubmit = amountMinor > 0 && amountMinor <= availableMinor;
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!canSubmit) return;
+    setIsSubmitting(true);
+    try {
+      await onCreate(amountMinor);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+      <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative bg-white dark:bg-slate-900 rounded-xl border border-transparent dark:border-slate-800 shadow-2xl w-full max-w-md">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 dark:border-slate-800">
+          <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Create Payout</h3>
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <form onSubmit={handleSubmit}>
+          <div className="p-6 space-y-4">
+            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-100 dark:border-slate-700">
+              <p className="text-xs text-slate-500 dark:text-slate-400">Available balance</p>
+              <p className="text-xl font-bold text-slate-900 dark:text-slate-100">{formatCurrency(availableMinor, currency)}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">Destination: {accountLabel}</p>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 dark:text-slate-300 mb-1.5">
+                Amount
+              </label>
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={amount}
+                onChange={e => setAmount(e.target.value)}
+                placeholder="0.00"
+                className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              />
+              {amountMinor > availableMinor && (
+                <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                  Amount cannot exceed the available balance.
+                </p>
+              )}
+            </div>
+          </div>
+
+          <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100 dark:border-slate-800">
+            <Button type="button" variant="outline" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button
+              type="submit"
+              disabled={!canSubmit || isSubmitting}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white gap-2"
+            >
+              {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
+              Queue Payout
+            </Button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

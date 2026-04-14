@@ -85,6 +85,7 @@ export interface ActiveSession {
 export interface SecuritySettings {
   loginAlerts: boolean;
   twoFactorEnabled: boolean;
+  twoFactorChannel: 'EMAIL' | 'PHONE' | null;
 }
 
 // ─── Data & Exports ──────────────────────────────────────────────────────────

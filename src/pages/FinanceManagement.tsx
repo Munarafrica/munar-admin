@@ -70,11 +70,11 @@ export const FinanceManagement: React.FC<FinanceManagementProps> = ({ onNavigate
     <div className="min-h-screen bg-[#F8FAFC] dark:bg-background flex flex-col font-['Raleway']">
       <TopBar onNavigate={onNavigate} />
 
-      <main className="flex-1 max-w-[1440px] mx-auto w-full px-4 sm:px-6 py-6 sm:py-8">
+      <main className="flex-1 max-w-[1440px] mx-auto w-full px-5 sm:px-8 lg:px-10 py-8 sm:py-10">
         {/* Page Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-5 mb-8">
           <div>
-            <div className="flex items-center gap-3 mb-1">
+            <div className="flex items-center gap-3 mt-6 mb-1">
               <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-900/20">
                 <Wallet className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
               </div>
@@ -103,15 +103,15 @@ export const FinanceManagement: React.FC<FinanceManagementProps> = ({ onNavigate
         </div>
 
         {/* Tab Navigation */}
-        <div className="mb-6 -mx-4 sm:mx-0">
-          <div className="border-b border-slate-200 dark:border-slate-800 px-4 sm:px-0">
-            <nav className="flex gap-0 overflow-x-auto scrollbar-hide">
+        <div className="mb-8 -mx-5 sm:mx-0">
+          <div className="border-b border-slate-200 dark:border-slate-800 px-5 sm:px-0">
+            <nav className="flex gap-2 overflow-x-auto scrollbar-hide">
               {TABS.map(tab => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={cn(
-                    'flex items-center gap-2 px-4 sm:px-6 py-3.5 text-sm font-medium border-b-2 whitespace-nowrap transition-colors shrink-0',
+                    'flex items-center gap-2 px-4 sm:px-5 py-4 text-sm font-medium border-b-2 whitespace-nowrap transition-colors shrink-0',
                     activeTab === tab.id
                       ? 'border-indigo-600 text-indigo-600 dark:text-indigo-400 dark:border-indigo-400'
                       : 'border-transparent text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300 hover:border-slate-300 dark:hover:border-slate-600'

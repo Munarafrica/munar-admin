@@ -4,6 +4,7 @@ import { CreateTicketModal } from "../components/CreateTicketModal";
 import { TicketType, Attendee, TicketStatus, Page } from "../components/event-dashboard/types";
 import { Button } from "../components/ui/button";
 import { TicketValidationTab } from "../components/event-dashboard/TicketValidationTab";
+import { TicketScannerBoothsTab } from "../components/event-dashboard/TicketScannerBoothsTab";
 import { TicketQuestionsTab } from "../components/event-dashboard/TicketQuestionsTab";
 import { TicketSettingsTab } from "../components/event-dashboard/TicketSettingsTab";
 import { AttendeeDetailModal } from "../components/event-dashboard/AttendeeDetailModal";
@@ -19,7 +20,7 @@ interface TicketManagementProps {
 }
 
 export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }) => {
-  const [activeTab, setActiveTab] = useState<'types' | 'attendees' | 'validation' | 'questions' | 'settings'>('types');
+  const [activeTab, setActiveTab] = useState<'types' | 'attendees' | 'booths' | 'validation' | 'questions' | 'settings'>('types');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [editingTicket, setEditingTicket] = useState<TicketType | null>(null);
   const [ticketPendingDelete, setTicketPendingDelete] = useState<TicketType | null>(null);
@@ -49,6 +50,10 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
     analytics,
     attendees,
     isLoadingAttendees,
+    scannerBooths,
+    scannerBoothScans,
+    isLoadingScannerBooths,
+    isLoadingScannerScans,
     fetchTickets,
     fetchAnalytics,
     createTicket,
@@ -59,12 +64,23 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
     checkInAttendee,
     undoCheckIn,
     exportAttendees,
+    fetchScannerBooths,
+    createScannerBooth,
+    deleteScannerBooth,
+    fetchScannerBoothScans,
   } = useTickets({ eventId });
 
   // Fetch attendees when switching to attendees or validation tab
   useEffect(() => {
     if (activeTab === 'attendees' || activeTab === 'validation') {
       fetchAttendees();
+    }
+  }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (activeTab === 'booths') {
+      fetchScannerBooths();
+      fetchScannerBoothScans();
     }
   }, [activeTab]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -235,6 +251,7 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
         onSale: orderedTickets.filter(t => t.status === 'On Sale').length,
         sold: analytics?.totalSold ?? orderedTickets.reduce((sum, t) => sum + t.quantitySold, 0),
         revenue: analytics?.totalRevenue ?? orderedTickets.reduce((sum, t) => sum + (t.isFree ? 0 : (t.price || 0) * t.quantitySold), 0),
+        booths: scannerBooths.length,
     };
 
     const StatCard = ({ label, value, icon: Icon, color }: { label: string; value: string | number; icon: any; color: string }) => (
@@ -297,7 +314,7 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
                             <StatCard label="Ticket types" value={stats.totalTypes} icon={Ticket} color="indigo" />
                             <StatCard label="On sale" value={stats.onSale} icon={Users} color="emerald" />
                             <StatCard label="Sold" value={stats.sold} icon={QrCode} color="blue" />
-                            <StatCard label="Revenue" value={`₦${stats.revenue.toLocaleString()}`} icon={CreditCard} color="amber" />
+                            <StatCard label="Booths" value={stats.booths} icon={QrCode} color="amber" />
                         </div>
 
                         {/* Tabs & Content */}
@@ -307,6 +324,7 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
                     {[
                         { id: 'types', label: 'Ticket Types', icon: Ticket },
                         { id: 'attendees', label: 'Attendees', icon: Users },
+                        { id: 'booths', label: 'Booths', icon: QrCode },
                         { id: 'validation', label: 'Validation', icon: QrCode },
                         { id: 'questions', label: 'Questions', icon: MessageSquare },
                         { id: 'settings', label: 'Settings', icon: Settings },
@@ -536,6 +554,18 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
                     {/* NEW TABS */}
                     {activeTab === 'validation' && (
                         <TicketValidationTab attendees={attendees} onCheckIn={handleCheckIn} eventId={eventId} />
+                    )}
+
+                    {activeTab === 'booths' && (
+                        <TicketScannerBoothsTab
+                          booths={scannerBooths}
+                          scans={scannerBoothScans}
+                          isLoadingBooths={isLoadingScannerBooths}
+                          isLoadingScans={isLoadingScannerScans}
+                          onCreateBooth={createScannerBooth}
+                          onDeleteBooth={deleteScannerBooth}
+                          onRefreshScans={fetchScannerBoothScans}
+                        />
                     )}
                     
                     {activeTab === 'questions' && (

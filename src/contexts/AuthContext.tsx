@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { config } from '../config';
 import { authService, tenantService } from '../services';
 import {
@@ -86,7 +87,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     });
 
     const handleLogout = () => {
-      syncUser(null, 'Session expired. Please log in again.');
+      const message = 'Your session expired. Please log in again.';
+      syncUser(null, message);
+      toast.error(message, { id: 'auth-session-expired' });
     };
 
     window.addEventListener('auth:logout', handleLogout);

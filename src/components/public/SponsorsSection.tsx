@@ -34,16 +34,18 @@ export const SponsorsSection: React.FC<SponsorsSectionProps> = ({
           No sponsors added yet.
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 items-stretch">
           {visibleSponsors.map((sponsor) => {
             const content = (
-              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 h-full flex flex-col items-center gap-3 hover:shadow-md transition-shadow">
-                <div className="h-20 w-full flex items-center justify-center overflow-hidden">
-                  <img
-                    src={sponsor.logoUrl}
-                    alt={sponsor.name}
-                    className={cn('max-h-full object-contain', grayscale && 'grayscale')}
-                  />
+              <div className="rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 p-4 h-full min-h-[220px] flex flex-col items-center justify-between gap-3 hover:shadow-md transition-shadow">
+                <div className="h-36 w-full rounded-lg border border-slate-100 bg-slate-50/70 p-6 flex items-center justify-center overflow-hidden dark:border-slate-800 dark:bg-slate-950/50">
+                  <div className="h-24 w-56 max-w-full flex items-center justify-center">
+                    <img
+                      src={sponsor.logoUrl}
+                      alt={sponsor.name}
+                      className={cn('h-full w-full object-contain', grayscale && 'grayscale')}
+                    />
+                  </div>
                 </div>
                 <div className="text-center space-y-1">
                   <p className="text-sm font-semibold text-slate-900 dark:text-slate-100">{sponsor.name}</p>

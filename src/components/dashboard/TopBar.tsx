@@ -105,12 +105,15 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate }) => {
               </button>
 
               {showNotifications && (
-                <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden z-50">
+                <div
+                  className="absolute right-0 top-full mt-2 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 shadow-xl overflow-hidden z-50"
+                  style={{ width: 324, maxWidth: 'calc(100vw - 2rem)', maxHeight: 'calc(100vh - 88px)' }}
+                >
                   <div className="px-4 py-3 border-b border-slate-100 dark:border-slate-800">
                     <p className="text-sm font-bold text-slate-900 dark:text-slate-100">Notifications</p>
                     <p className="text-xs text-slate-500 dark:text-slate-400">Ticket confirmations, payment updates, and reminders.</p>
                   </div>
-                  <div className="max-h-96 overflow-auto">
+                  <div className="overflow-y-auto" style={{ maxHeight: 'calc(100vh - 162px)' }}>
                     {notifications.length === 0 ? (
                       <div className="px-4 py-8 text-center text-sm text-slate-500 dark:text-slate-400">
                         No new notifications.
@@ -122,10 +125,10 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate }) => {
                           onClick={() => markRead(item.id)}
                           className="w-full px-4 py-3 text-left border-b last:border-b-0 border-slate-100 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
                         >
-                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100">
+                          <p className="text-sm font-medium text-slate-900 dark:text-slate-100 break-words">
                             {(item.notification.payloadJson.title as string) || item.notification.templateKey}
                           </p>
-                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1">
+                          <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 break-words">
                             {(item.notification.payloadJson.body as string) || 'Open to mark as read.'}
                           </p>
                         </button>

@@ -1,4 +1,3 @@
-// Transactions Tab - complete ledger of all financial events
 import React, { useState } from 'react';
 import {
   Search,
@@ -14,12 +13,12 @@ import {
   Download,
 } from 'lucide-react';
 import { cn } from '../ui/utils';
-import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Skeleton } from '../ui/skeleton';
 import { useTransactions } from '../../hooks/useFinance';
 import type { TransactionType, TransactionStatus } from '../../types/finance';
 import { TRANSACTION_TYPE_LABELS } from '../../types/finance';
+import { toast } from 'sonner';
 
 interface TransactionsTabProps {
   events: { id: string; name: string }[];
@@ -31,7 +30,7 @@ function formatCurrency(amount: number, currency = 'NGN'): string {
     currency,
     minimumFractionDigits: 0,
     maximumFractionDigits: 0,
-  }).format(amount);
+  }).format(amount / 100);
 }
 
 function formatDate(dateStr: string): string {
@@ -68,12 +67,26 @@ const SOURCE_COLORS: Record<TransactionType, string> = {
   refund: 'red',
 };
 
-const STATUS_STYLES: Record<TransactionStatus, string> = {
-  completed: 'border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 bg-emerald-50 dark:bg-emerald-900/20',
-  pending: 'border-amber-200 dark:border-amber-800 text-amber-700 dark:text-amber-300 bg-amber-50 dark:bg-amber-900/20',
-  failed: 'border-red-200 dark:border-red-800 text-red-700 dark:text-red-300 bg-red-50 dark:bg-red-900/20',
-  refunded: 'border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-400 bg-slate-50 dark:bg-slate-800',
+const STATUS_STYLES: Record<TransactionStatus, React.CSSProperties> = {
+  completed: { backgroundColor: 'rgba(16, 185, 129, 0.16)', borderColor: 'rgba(16, 185, 129, 0.45)', color: '#6ee7b7' },
+  pending: { backgroundColor: 'rgba(245, 158, 11, 0.16)', borderColor: 'rgba(245, 158, 11, 0.45)', color: '#fbbf24' },
+  failed: { backgroundColor: 'rgba(239, 68, 68, 0.16)', borderColor: 'rgba(239, 68, 68, 0.45)', color: '#fca5a5' },
+  refunded: { backgroundColor: 'rgba(148, 163, 184, 0.16)', borderColor: 'rgba(148, 163, 184, 0.45)', color: '#cbd5e1' },
 };
+
+function TransactionStatusBadge({ status, compact = false }: { status: TransactionStatus; compact?: boolean }) {
+  return (
+    <span
+      className={cn(
+        'inline-flex items-center justify-center rounded-md border font-semibold capitalize leading-none',
+        compact ? 'px-2 py-1 text-xs' : 'px-2.5 py-1.5 text-xs'
+      )}
+      style={STATUS_STYLES[status]}
+    >
+      {status}
+    </span>
+  );
+}
 
 export const TransactionsTab: React.FC<TransactionsTabProps> = ({ events }) => {
   const [searchInput, setSearchInput] = useState('');
@@ -85,7 +98,18 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({ events }) => {
     filters,
     isLoading,
     updateFilters,
+    createRefund,
   } = useTransactions();
+
+  const handleRefund = async (transactionId: string, amountMinor: number) => {
+    if (!window.confirm('Refund this captured transaction?')) return;
+    try {
+      await createRefund(transactionId, amountMinor, 'Organizer refund from finance screen');
+      toast.success('Refund created successfully');
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Failed to create refund');
+    }
+  };
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,9 +122,9 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({ events }) => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* Header */}
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-5 bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-5 sm:p-6">
         <div>
           <h3 className="text-lg font-bold text-slate-900 dark:text-slate-100">Transactions</h3>
           <p className="text-sm text-slate-500 dark:text-slate-400 mt-0.5">
@@ -109,16 +133,16 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({ events }) => {
         </div>
 
         {/* Filters Row */}
-        <div className="flex flex-col sm:flex-row gap-3">
+        <div className="flex flex-col lg:flex-row gap-4">
           {/* Search */}
           <form onSubmit={handleSearch} className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            {/* <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" /> */}
             <input
               type="text"
               placeholder="Search by ID, event, name..."
               value={searchInput}
               onChange={e => setSearchInput(e.target.value)}
-              className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl pl-10 pr-10 py-2 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              className="w-full bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl ml-10 pl-4 pr-10 py-3 text-sm text-slate-900 dark:text-slate-100 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
             />
             {searchInput && (
               <button
@@ -136,7 +160,7 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({ events }) => {
             <select
               value={filters.eventId || ''}
               onChange={e => updateFilters({ eventId: e.target.value || undefined })}
-              className="appearance-none bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 pr-10 text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-auto min-w-[160px]"
+              className="appearance-none bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full lg:w-auto min-w-[180px]"
             >
               <option value="">All Events</option>
               {events.map(ev => (
@@ -151,7 +175,7 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({ events }) => {
             <select
               value={filters.source || ''}
               onChange={e => updateFilters({ source: (e.target.value as TransactionType) || undefined })}
-              className="appearance-none bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-2 pr-10 text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full sm:w-auto min-w-[140px]"
+              className="appearance-none bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-700 rounded-xl px-4 py-3 pr-10 text-sm font-medium text-slate-700 dark:text-slate-300 focus:outline-none focus:ring-2 focus:ring-indigo-500 w-full lg:w-auto min-w-[160px]"
             >
               <option value="">All Types</option>
               {Object.entries(TRANSACTION_TYPE_LABELS).map(([key, label]) => (
@@ -173,35 +197,38 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({ events }) => {
       ) : transactions.length === 0 ? (
         <EmptyTransactions />
       ) : (
-        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden">
+        <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 overflow-hidden p-2">
           {/* Desktop Table */}
-          <div className="hidden lg:block overflow-x-auto">
-            <table className="w-full">
+          <div className="hidden lg:block overflow-x-auto rounded-lg border border-slate-100 dark:border-slate-800">
+            <table className="w-full min-w-[1120px]">
               <thead>
-                <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-800/30">
-                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                <tr className="border-b border-slate-200 bg-slate-200 dark:border-slate-700 dark:bg-slate-800">
+                  <th className="text-left text-xs font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wider py-4 px-5">
                     Transaction
                   </th>
-                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-left text-xs font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wider py-4 px-5">
                     Event
                   </th>
-                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-left text-xs font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wider py-4 px-5">
                     Type
                   </th>
-                  <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-right text-xs font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wider py-4 px-5">
                     Amount
                   </th>
-                  <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-right text-xs font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wider py-4 px-5">
                     Fee
                   </th>
-                  <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-right text-xs font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wider py-4 px-5">
                     Net
                   </th>
-                  <th className="text-left text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-left text-xs font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wider py-4 px-5">
                     Status
                   </th>
-                  <th className="text-right text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase tracking-wider py-3 px-4">
+                  <th className="text-right text-xs font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wider py-4 px-5">
                     Date
+                  </th>
+                  <th className="text-right text-xs font-bold text-slate-700 dark:text-slate-100 uppercase tracking-wider py-4 px-5">
+                    Action
                   </th>
                 </tr>
               </thead>
@@ -214,7 +241,7 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({ events }) => {
                       key={txn.id}
                       className="border-b border-slate-50 dark:border-slate-800/50 hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-colors"
                     >
-                      <td className="py-3.5 px-4">
+                      <td className="py-4 px-5">
                         <div className="flex items-center gap-3">
                           <div
                             className={cn(
@@ -228,41 +255,50 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({ events }) => {
                           >
                             <Icon className="w-4 h-4" />
                           </div>
-                          <div>
-                            <p className="text-sm font-mono font-medium text-slate-900 dark:text-slate-100">
+                          <div className="min-w-0">
+                            <p className="max-w-[260px] truncate text-sm font-mono font-medium text-slate-900 dark:text-slate-100">
                               {txn.id}
                             </p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400">{txn.description}</p>
+                            <p className="max-w-[260px] truncate text-xs text-slate-500 dark:text-slate-400 mt-1">{txn.description}</p>
                           </div>
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 text-sm text-slate-600 dark:text-slate-300 max-w-[180px] truncate">
+                      <td className="py-4 px-5 text-sm text-slate-600 dark:text-slate-300 max-w-[200px] truncate">
                         {txn.eventName}
                       </td>
-                      <td className="py-3.5 px-4 text-sm text-slate-600 dark:text-slate-300">
+                      <td className="py-4 px-5 text-sm text-slate-600 dark:text-slate-300">
                         {TRANSACTION_TYPE_LABELS[txn.source]}
                       </td>
                       <td className={cn(
-                        'py-3.5 px-4 text-sm font-semibold text-right',
+                        'py-4 px-5 text-sm font-semibold text-right',
                         txn.amount < 0 ? 'text-red-600 dark:text-red-400' : 'text-slate-900 dark:text-slate-100'
                       )}>
                         {txn.amount < 0 ? `−${formatCurrency(Math.abs(txn.amount))}` : formatCurrency(txn.amount)}
                       </td>
-                      <td className="py-3.5 px-4 text-sm text-slate-500 dark:text-slate-400 text-right">
+                      <td className="py-4 px-5 text-sm text-slate-500 dark:text-slate-400 text-right">
                         {formatCurrency(txn.platformFee + txn.gatewayFee)}
                       </td>
-                      <td className="py-3.5 px-4 text-sm font-medium text-right text-slate-900 dark:text-slate-100">
+                      <td className="py-4 px-5 text-sm font-medium text-right text-slate-900 dark:text-slate-100">
                         {txn.netAmount < 0
                           ? `−${formatCurrency(Math.abs(txn.netAmount))}`
                           : formatCurrency(txn.netAmount)}
                       </td>
-                      <td className="py-3.5 px-4">
-                        <Badge variant="outline" className={cn('font-medium capitalize', STATUS_STYLES[txn.status])}>
-                          {txn.status}
-                        </Badge>
+                      <td className="py-4 px-5">
+                        <TransactionStatusBadge status={txn.status} />
                       </td>
-                      <td className="py-3.5 px-4 text-sm text-slate-500 dark:text-slate-400 text-right whitespace-nowrap">
+                      <td className="py-4 px-5 text-sm text-slate-500 dark:text-slate-400 text-right whitespace-nowrap">
                         {formatDate(txn.createdAt)}
+                      </td>
+                      <td className="py-4 px-5 text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={txn.backendStatus !== 'CAPTURED'}
+                          onClick={() => handleRefund(txn.id, txn.amount)}
+                          className="text-xs"
+                        >
+                          Refund
+                        </Button>
                       </td>
                     </tr>
                   );
@@ -310,10 +346,18 @@ export const TransactionsTab: React.FC<TransactionsTabProps> = ({ events }) => {
                     <span className="text-xs text-slate-500 dark:text-slate-400">
                       {txn.id} · {formatDate(txn.createdAt)}
                     </span>
-                    <Badge variant="outline" className={cn('text-xs font-medium capitalize', STATUS_STYLES[txn.status])}>
-                      {txn.status}
-                    </Badge>
+                    <TransactionStatusBadge status={txn.status} compact />
                   </div>
+                  {txn.backendStatus === 'CAPTURED' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRefund(txn.id, txn.amount)}
+                      className="mt-3 w-full text-xs"
+                    >
+                      Refund
+                    </Button>
+                  )}
                 </div>
               );
             })}

@@ -70,7 +70,7 @@ function formatRelativeTime(dateStr: string): string {
 
 // ─── Main component ──────────────────────────────────────────────────────────
 export const SecurityTab: React.FC = () => {
-  const { changePassword } = useAuth();
+  const { changePassword, user } = useAuth();
 
   // Password change
   const [currentPassword, setCurrentPassword] = useState('');
@@ -87,6 +87,8 @@ export const SecurityTab: React.FC = () => {
 
   // Security settings
   const [loginAlerts, setLoginAlerts] = useState(true);
+  const [twoFactorEnabled, setTwoFactorEnabled] = useState(false);
+  const [twoFactorChannel, setTwoFactorChannel] = useState<'EMAIL' | 'PHONE'>('EMAIL');
   const [isSavingSecurity, setIsSavingSecurity] = useState(false);
 
   // Account deletion
@@ -107,6 +109,8 @@ export const SecurityTab: React.FC = () => {
       ]);
       setSessions(sessionsData);
       setLoginAlerts(securityData.loginAlerts);
+      setTwoFactorEnabled(securityData.twoFactorEnabled);
+      setTwoFactorChannel(securityData.twoFactorChannel ?? 'EMAIL');
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load security settings');
@@ -160,11 +164,27 @@ export const SecurityTab: React.FC = () => {
 
   const handleToggleLoginAlerts = async (value: boolean) => {
     setLoginAlerts(value);
+    setError('Login alert preferences need the backend settings endpoint before they can be saved.');
+  };
+
+  const handleSaveTwoFactor = async () => {
+    if (twoFactorEnabled && twoFactorChannel === 'PHONE' && !user?.phone) {
+      setError('Add a phone number before enabling phone 2FA.');
+      return;
+    }
+
     setIsSavingSecurity(true);
+    setError(null);
     try {
-      await settingsService.saveSecuritySettings({ loginAlerts: value });
-    } catch {
-      setLoginAlerts(!value);
+      const updated = await settingsService.saveSecuritySettings({
+        loginAlerts,
+        twoFactorEnabled,
+        twoFactorChannel,
+      });
+      setTwoFactorEnabled(updated.twoFactorEnabled);
+      setTwoFactorChannel(updated.twoFactorChannel ?? 'EMAIL');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to save two-factor settings');
     } finally {
       setIsSavingSecurity(false);
     }
@@ -223,6 +243,9 @@ export const SecurityTab: React.FC = () => {
         )}
 
         <form onSubmit={handleChangePassword} className="space-y-4 max-w-md">
+          <p className="text-xs text-amber-600 dark:text-amber-400">
+            Password changes need the logged-in change-password endpoint before they can be saved here.
+          </p>
           <Input
             label="Current Password"
             type="password"
@@ -230,6 +253,7 @@ export const SecurityTab: React.FC = () => {
             onChange={e => setCurrentPassword(e.target.value)}
             placeholder="Enter current password"
             required
+            disabled
           />
           <Input
             label="New Password"
@@ -238,6 +262,7 @@ export const SecurityTab: React.FC = () => {
             onChange={e => setNewPassword(e.target.value)}
             placeholder="Enter new password"
             required
+            disabled
           />
           <Input
             label="Confirm New Password"
@@ -246,8 +271,9 @@ export const SecurityTab: React.FC = () => {
             onChange={e => setConfirmPassword(e.target.value)}
             placeholder="Confirm new password"
             required
+            disabled
           />
-          <Button type="submit" disabled={isChangingPassword || !currentPassword || !newPassword || !confirmPassword}>
+          <Button type="submit" disabled>
             {isChangingPassword ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
@@ -258,6 +284,58 @@ export const SecurityTab: React.FC = () => {
             )}
           </Button>
         </form>
+      </div>
+
+      {/* Two-Factor Authentication */}
+      <div className="bg-white dark:bg-slate-900 rounded-xl border border-slate-200 dark:border-slate-800 p-6 space-y-5">
+        <div className="flex items-center gap-2">
+          <Shield className="w-4 h-4 text-slate-500 dark:text-slate-400" />
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-slate-100">Two-Factor Authentication</h3>
+        </div>
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-sm font-medium text-slate-900 dark:text-slate-100">Require a second step at login</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">
+              Use email or phone verification for extra account protection.
+            </p>
+          </div>
+          <ToggleSwitch
+            checked={twoFactorEnabled}
+            onChange={setTwoFactorEnabled}
+            label="Toggle two-factor authentication"
+          />
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {(['EMAIL', 'PHONE'] as const).map(channel => (
+            <button
+              key={channel}
+              type="button"
+              onClick={() => setTwoFactorChannel(channel)}
+              disabled={!twoFactorEnabled || (channel === 'PHONE' && !user?.phone)}
+              className={cn(
+                'p-4 rounded-xl border text-left transition-all disabled:opacity-50 disabled:cursor-not-allowed',
+                twoFactorChannel === channel
+                  ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-900/20 ring-1 ring-indigo-500'
+                  : 'border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-950 hover:border-slate-300 dark:hover:border-slate-600',
+              )}
+            >
+              <p className="text-sm font-medium text-slate-900 dark:text-slate-100">{channel === 'EMAIL' ? 'Email' : 'Phone'}</p>
+              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                {channel === 'EMAIL' ? user?.email : user?.phone || 'Add a phone number first'}
+              </p>
+            </button>
+          ))}
+        </div>
+        <Button onClick={handleSaveTwoFactor} disabled={isSavingSecurity}>
+          {isSavingSecurity ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              Saving...
+            </>
+          ) : (
+            'Save Two-Factor Settings'
+          )}
+        </Button>
       </div>
 
       {/* Active Sessions */}
@@ -279,6 +357,10 @@ export const SecurityTab: React.FC = () => {
               </div>
             ))}
           </div>
+        ) : sessions.length === 0 ? (
+          <p className="text-sm text-slate-500 dark:text-slate-400">
+            Session management needs the backend sessions endpoint before devices can be listed here.
+          </p>
         ) : (
           <div className="divide-y divide-slate-100 dark:divide-slate-800 -mx-1">
             {sessions.map(session => {

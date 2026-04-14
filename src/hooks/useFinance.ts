@@ -12,6 +12,7 @@ import {
   BankAccount,
   Bank,
   AddBankAccountRequest,
+  CreatePayoutRequest,
   VerifyBankAccountResponse,
   Dispute,
   CreateDisputeRequest,
@@ -138,6 +139,12 @@ export function usePayouts(initialFilters?: PayoutFilters) {
     setFilters(prev => ({ ...prev, page }));
   }, []);
 
+  const createPayout = useCallback(async (req: CreatePayoutRequest) => {
+    const payout = await financeService.createPayout(req);
+    await load(filters);
+    return payout;
+  }, [filters, load]);
+
   return {
     payouts: result.data,
     total: result.total,
@@ -147,6 +154,8 @@ export function usePayouts(initialFilters?: PayoutFilters) {
     isLoading,
     updateFilters,
     goToPage,
+    refresh: () => load(filters),
+    createPayout,
   };
 }
 
@@ -177,6 +186,11 @@ export function useTransactions(initialFilters?: TransactionFilters) {
     setFilters(prev => ({ ...prev, page }));
   }, []);
 
+  const createRefund = useCallback(async (paymentTransactionId: string, amountMinor: number, reason?: string) => {
+    await financeService.createRefund(paymentTransactionId, { amountMinor, reason });
+    await load(filters);
+  }, [filters, load]);
+
   return {
     transactions: result.data,
     total: result.total,
@@ -186,6 +200,7 @@ export function useTransactions(initialFilters?: TransactionFilters) {
     isLoading,
     updateFilters,
     goToPage,
+    createRefund,
   };
 }
 

@@ -62,7 +62,7 @@ export const Settings: React.FC<SettingsProps> = ({ onNavigate }) => {
 
       <main className="flex-1 max-w-[1440px] mx-auto w-full px-4 sm:px-6 lg:px-10 py-6 sm:py-8">
         {/* Desktop header */}
-        <div className="hidden lg:flex items-center gap-3 mb-6">
+        <div className="hidden lg:flex items-center gap-3 mt-6 mb-6">
           <div className="p-2 rounded-xl bg-slate-100 dark:bg-slate-800">
             <SettingsIcon className="w-5 h-5 text-slate-600 dark:text-slate-400" />
           </div>
