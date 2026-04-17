@@ -66,6 +66,7 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
     exportAttendees,
     fetchScannerBooths,
     createScannerBooth,
+    renameScannerBooth,
     deleteScannerBooth,
     fetchScannerBoothScans,
   } = useTickets({ eventId });
@@ -563,6 +564,7 @@ export const TicketManagement: React.FC<TicketManagementProps> = ({ onNavigate }
                           isLoadingBooths={isLoadingScannerBooths}
                           isLoadingScans={isLoadingScannerScans}
                           onCreateBooth={createScannerBooth}
+                          onRenameBooth={renameScannerBooth}
                           onDeleteBooth={deleteScannerBooth}
                           onRefreshScans={fetchScannerBoothScans}
                         />

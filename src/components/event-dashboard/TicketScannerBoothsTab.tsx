@@ -1,8 +1,17 @@
 import React, { useMemo, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
-import { CheckCircle2, Clipboard, Loader2, Plus, QrCode, Smartphone, Trash2, UserCheck } from 'lucide-react';
+import { CheckCircle2, Clipboard, Edit3, Loader2, Plus, QrCode, Smartphone, Trash2, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '../ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '../ui/dialog';
+import { Input } from '../ui/input';
 import { cn } from '../ui/utils';
 import { TicketScanRecord, TicketScannerBooth } from './types';
 
@@ -12,6 +21,7 @@ interface TicketScannerBoothsTabProps {
   isLoadingBooths: boolean;
   isLoadingScans: boolean;
   onCreateBooth: () => Promise<TicketScannerBooth | null>;
+  onRenameBooth: (boothId: string, name: string) => Promise<{ booth: TicketScannerBooth | null; error?: string }>;
   onDeleteBooth: (boothId: string) => Promise<boolean>;
   onRefreshScans: (boothId?: string) => Promise<void>;
 }
@@ -27,7 +37,9 @@ function formatDateTime(value?: string | null) {
 }
 
 function getBoothQrValue(booth: TicketScannerBooth) {
-  return booth.pairingUrl || JSON.stringify({
+  if (booth.pairingUrl) return booth.pairingUrl;
+
+  return JSON.stringify({
     type: 'MUNAR_SCANNER_BOOTH_PAIRING',
     boothId: booth.id,
     eventId: booth.eventId,
@@ -41,14 +53,22 @@ export const TicketScannerBoothsTab: React.FC<TicketScannerBoothsTabProps> = ({
   isLoadingBooths,
   isLoadingScans,
   onCreateBooth,
+  onRenameBooth,
   onDeleteBooth,
   onRefreshScans,
 }) => {
   const [selectedBoothId, setSelectedBoothId] = useState<string>('all');
   const [creating, setCreating] = useState(false);
   const [deletingBoothId, setDeletingBoothId] = useState<string | null>(null);
+  const [renamingBooth, setRenamingBooth] = useState<TicketScannerBooth | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [renameError, setRenameError] = useState<string | null>(null);
+  const [isRenaming, setIsRenaming] = useState(false);
 
   const selectedBooth = booths.find((booth) => booth.id === selectedBoothId);
+  const trimmedRenameValue = renameValue.trim();
+  const isRenameUnchanged = renamingBooth ? trimmedRenameValue === renamingBooth.name.trim() : true;
+  const isRenameLengthValid = trimmedRenameValue.length >= 2 && trimmedRenameValue.length <= 80;
   const filteredScans = selectedBoothId === 'all'
     ? scans
     : scans.filter((scan) => scan.boothId === selectedBoothId);
@@ -81,6 +101,51 @@ export const TicketScannerBoothsTab: React.FC<TicketScannerBoothsTabProps> = ({
       if (selectedBoothId === booth.id) setSelectedBoothId('all');
     } else {
       toast.error('Failed to delete booth');
+    }
+  };
+
+  const openRenameDialog = (booth: TicketScannerBooth) => {
+    setRenamingBooth(booth);
+    setRenameValue(booth.name);
+    setRenameError(null);
+  };
+
+  const handleRenameBooth = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!renamingBooth) return;
+
+    if (trimmedRenameValue.length < 2) {
+      setRenameError('Booth name must be at least 2 characters.');
+      return;
+    }
+
+    if (trimmedRenameValue.length > 80) {
+      setRenameError('Booth name must be at most 80 characters.');
+      return;
+    }
+
+    if (isRenameUnchanged) return;
+
+    const duplicateBooth = booths.find((booth) =>
+      booth.id !== renamingBooth.id &&
+      booth.name.trim().toLowerCase() === trimmedRenameValue.toLowerCase()
+    );
+    if (duplicateBooth) {
+      setRenameError('A scanner booth with this name already exists for this event.');
+      return;
+    }
+
+    setIsRenaming(true);
+    setRenameError(null);
+    const result = await onRenameBooth(renamingBooth.id, trimmedRenameValue);
+    setIsRenaming(false);
+
+    if (result.booth) {
+      toast.success(`${result.booth.name} renamed`);
+      setRenamingBooth(null);
+      setRenameValue('');
+    } else {
+      setRenameError(result.error || 'Failed to rename booth.');
     }
   };
 
@@ -178,15 +243,25 @@ export const TicketScannerBoothsTab: React.FC<TicketScannerBoothsTabProps> = ({
                       </div>
                       <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Created {formatDateTime(booth.createdAt)}</p>
                     </div>
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteBooth(booth)}
-                      disabled={deletingBoothId === booth.id}
-                      className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20 dark:hover:text-red-400"
-                      title={`Delete ${booth.name}`}
-                    >
-                      {deletingBoothId === booth.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
-                    </button>
+                    <div className="flex shrink-0 items-center gap-1">
+                      <button
+                        type="button"
+                        onClick={() => openRenameDialog(booth)}
+                        className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-700 dark:hover:bg-slate-800 dark:hover:text-slate-200"
+                        title={`Rename ${booth.name}`}
+                      >
+                        <Edit3 className="h-4 w-4" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteBooth(booth)}
+                        disabled={deletingBoothId === booth.id}
+                        className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 disabled:opacity-50 dark:hover:bg-red-900/20 dark:hover:text-red-400"
+                        title={`Delete ${booth.name}`}
+                      >
+                        {deletingBoothId === booth.id ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                      </button>
+                    </div>
                   </div>
 
                   <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
@@ -317,6 +392,70 @@ export const TicketScannerBoothsTab: React.FC<TicketScannerBoothsTabProps> = ({
           </table>
         </div>
       </div>
+
+      <Dialog
+        open={Boolean(renamingBooth)}
+        onOpenChange={(open) => {
+          if (isRenaming) return;
+          if (!open) {
+            setRenamingBooth(null);
+            setRenameValue('');
+            setRenameError(null);
+          }
+        }}
+      >
+        <DialogContent>
+          <form onSubmit={handleRenameBooth} className="space-y-5">
+            <DialogHeader>
+              <DialogTitle>Rename booth</DialogTitle>
+              <DialogDescription>
+                Use an operational label like Gate A, VIP Entrance, Main Door, or Backstage.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-2">
+              <Input
+                label="Booth name"
+                value={renameValue}
+                onChange={(event) => {
+                  setRenameValue(event.target.value);
+                  setRenameError(null);
+                }}
+                minLength={2}
+                maxLength={80}
+                autoFocus
+                error={renameError || undefined}
+              />
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {trimmedRenameValue.length}/80 characters
+              </p>
+            </div>
+
+            <DialogFooter>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setRenamingBooth(null);
+                  setRenameValue('');
+                  setRenameError(null);
+                }}
+                disabled={isRenaming}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={isRenaming || !isRenameLengthValid || isRenameUnchanged}
+                className="bg-indigo-600 text-white hover:bg-indigo-700 dark:bg-indigo-600 dark:text-white dark:hover:bg-indigo-500"
+              >
+                {isRenaming ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Rename
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

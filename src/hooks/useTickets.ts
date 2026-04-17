@@ -42,6 +42,7 @@ interface UseTicketsReturn {
   // Scanner Booth Actions
   fetchScannerBooths: () => Promise<void>;
   createScannerBooth: () => Promise<TicketScannerBooth | null>;
+  renameScannerBooth: (boothId: string, name: string) => Promise<{ booth: TicketScannerBooth | null; error?: string }>;
   deleteScannerBooth: (boothId: string) => Promise<boolean>;
   fetchScannerBoothScans: (boothId?: string) => Promise<void>;
   
@@ -235,6 +236,37 @@ export function useTickets({ eventId, autoFetch = true }: UseTicketsOptions): Us
     }
   }, [eventId]);
 
+  const renameScannerBooth = useCallback(async (
+    boothId: string,
+    name: string,
+  ): Promise<{ booth: TicketScannerBooth | null; error?: string }> => {
+    try {
+      const updatedBooth = await ticketsService.renameScannerBooth(eventId, boothId, name);
+      let mergedBooth = updatedBooth;
+
+      setScannerBooths((prev) => prev.map((booth) => {
+        if (booth.id !== boothId) return booth;
+
+        mergedBooth = {
+          ...booth,
+          ...updatedBooth,
+          pairingToken: updatedBooth.pairingToken || booth.pairingToken,
+          pairingUrl: updatedBooth.pairingUrl || booth.pairingUrl,
+        };
+        return mergedBooth;
+      }));
+      setScannerBoothScans((prev) => prev.map((scan) =>
+        scan.boothId === boothId ? { ...scan, boothName: mergedBooth.name } : scan
+      ));
+
+      return { booth: mergedBooth };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to rename scanner booth';
+      setError(message);
+      return { booth: null, error: message };
+    }
+  }, [eventId]);
+
   const deleteScannerBooth = useCallback(async (boothId: string): Promise<boolean> => {
     try {
       await ticketsService.deleteScannerBooth(eventId, boothId);
@@ -304,6 +336,7 @@ export function useTickets({ eventId, autoFetch = true }: UseTicketsOptions): Us
     exportAttendees,
     fetchScannerBooths,
     createScannerBooth,
+    renameScannerBooth,
     deleteScannerBooth,
     fetchScannerBoothScans,
     analytics,

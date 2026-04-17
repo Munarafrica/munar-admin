@@ -147,8 +147,8 @@ export interface TicketScannerBooth {
   eventId: string;
   name: string;
   status: TicketScannerBoothStatus;
-  pairingToken: string;
-  pairingUrl?: string;
+  pairingToken: string | null;
+  pairingUrl?: string | null;
   assignedScannerName?: string;
   assignedScannerEmail?: string;
   assignedScannerPhone?: string;

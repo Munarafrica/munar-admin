@@ -269,8 +269,8 @@ function normalizeScannerBooth(raw: any, fallbackEventId?: string): TicketScanne
     eventId: raw.eventId || fallbackEventId || '',
     name: raw.name || 'Booth',
     status,
-    pairingToken: raw.pairingToken || raw.token || '',
-    pairingUrl: raw.pairingUrl || raw.qrCodeUrl || raw.qrUrl,
+    pairingToken: raw.pairingToken ?? raw.token ?? null,
+    pairingUrl: raw.pairingUrl ?? raw.qrCodeUrl ?? raw.qrUrl ?? null,
     assignedScannerName: raw.assignedScannerName || assignedScanner.name,
     assignedScannerEmail: raw.assignedScannerEmail || assignedScanner.email,
     assignedScannerPhone: raw.assignedScannerPhone || assignedScanner.phone,
@@ -602,6 +602,38 @@ class TicketsService {
       return booth;
     }
     const response = await apiClient.post<ApiResponse<any> | any>(`/events/${eventId}/scanner-booths`, {});
+    return normalizeScannerBooth(unwrapPayloadResponse(response), eventId);
+  }
+
+  async renameScannerBooth(eventId: string, boothId: string, name: string): Promise<TicketScannerBooth> {
+    const trimmedName = name.trim();
+
+    if (config.features.useMockData) {
+      await delay(350);
+      const index = mockTicketScannerBooths.findIndex((booth) => booth.id === boothId && booth.eventId === eventId);
+      if (index === -1) throw new Error('Booth not found');
+
+      if (trimmedName.length < 2) throw new Error('Booth name must be at least 2 characters');
+      if (trimmedName.length > 80) throw new Error('Booth name must be at most 80 characters');
+
+      const duplicate = mockTicketScannerBooths.some((booth) =>
+        booth.eventId === eventId &&
+        booth.id !== boothId &&
+        booth.name.trim().toLowerCase() === trimmedName.toLowerCase()
+      );
+      if (duplicate) throw new Error('A scanner booth with this name already exists for this event');
+
+      mockTicketScannerBooths[index] = {
+        ...mockTicketScannerBooths[index],
+        name: trimmedName,
+      };
+
+      return mockTicketScannerBooths[index];
+    }
+
+    const response = await apiClient.patch<ApiResponse<any> | any>(`/scanner-booths/${boothId}`, {
+      name: trimmedName,
+    });
     return normalizeScannerBooth(unwrapPayloadResponse(response), eventId);
   }
 
