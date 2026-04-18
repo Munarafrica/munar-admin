@@ -8,7 +8,9 @@ import {
   MessageResponse,
   MutationResponse,
   TenantSummary,
+  TwoFactorResponse,
   User,
+  UserType,
 } from '../types/api';
 
 interface AuthState {
@@ -23,6 +25,8 @@ interface AuthContextValue extends AuthState {
   memberships: User['memberships'];
   hasTenantAccess: boolean;
   login: (email: string, password: string) => Promise<User>;
+  loginWithGoogle: (credential: string, userType?: UserType) => Promise<User | TwoFactorResponse>;
+  verifyTwoFactor: (challengeToken: string, code: string) => Promise<User>;
   signUp: (data: {
     email: string;
     password: string;
@@ -120,6 +124,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return user;
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Login failed';
+      setState(prev => ({ ...prev, isLoading: false, error: message }));
+      throw err;
+    }
+  }, [syncUser]);
+
+  const loginWithGoogle = useCallback(async (credential: string, userType?: UserType): Promise<User | TwoFactorResponse> => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const googleResponse = await authService.loginWithGoogle({ credential, userType });
+
+      if ('requiresTwoFactor' in googleResponse) {
+        setState(prev => ({ ...prev, isLoading: false, error: null }));
+        return googleResponse;
+      }
+
+      const user = (await authService.getCurrentUser()) ?? googleResponse.user;
+      syncUser(user);
+      return user;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Google sign-in failed';
+      setState(prev => ({ ...prev, isLoading: false, error: message }));
+      throw err;
+    }
+  }, [syncUser]);
+
+  const verifyTwoFactor = useCallback(async (challengeToken: string, code: string): Promise<User> => {
+    setState(prev => ({ ...prev, isLoading: true, error: null }));
+
+    try {
+      const authResponse = await authService.verifyTwoFactor({ challengeToken, code });
+      const user = (await authService.getCurrentUser()) ?? authResponse.user;
+      syncUser(user);
+      return user;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Two-factor verification failed';
       setState(prev => ({ ...prev, isLoading: false, error: message }));
       throw err;
     }
@@ -243,6 +283,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     memberships,
     hasTenantAccess,
     login,
+    loginWithGoogle,
+    verifyTwoFactor,
     signUp,
     verifyEmail,
     resendVerificationEmail,

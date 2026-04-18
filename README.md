@@ -157,6 +157,7 @@ Create or update `.env` with values like:
 ```env
 VITE_API_BASE_URL=http://localhost:8000/api
 VITE_API_TIMEOUT=30000
+VITE_GOOGLE_CLIENT_ID=your-google-client-id.apps.googleusercontent.com
 VITE_USE_MOCK_DATA=false
 VITE_ENABLE_ANALYTICS=false
 ```
@@ -165,6 +166,7 @@ VITE_ENABLE_ANALYTICS=false
 
 - `VITE_API_BASE_URL`: Base URL for the backend API
 - `VITE_API_TIMEOUT`: Request timeout in milliseconds
+- `VITE_GOOGLE_CLIENT_ID`: Google OAuth web client ID for Google login/signup
 - `VITE_USE_MOCK_DATA`: Enables mock mode unless explicitly set to `false`
 - `VITE_ENABLE_ANALYTICS`: Enables analytics-specific features when set to `true`
 

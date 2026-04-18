@@ -67,6 +67,8 @@ class ApiClient {
     return [
       "/auth/login",
       "/auth/register",
+      "/auth/google",
+      "/auth/2fa/verify",
       "/auth/forgot-password",
       "/auth/reset-password",
       "/auth/refresh",

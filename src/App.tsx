@@ -5,6 +5,7 @@
 // See src/router/index.tsx for complete route definitions
 
 import React from 'react';
+import { GoogleOAuthProvider } from '@react-oauth/google';
 import { RouterProvider } from 'react-router-dom';
 import { router } from './router';
 
@@ -14,6 +15,7 @@ import { router } from './router';
 export type Page =
   | 'login'
   | 'signup'
+  | 'two-factor'
   | 'verification'
   | 'account-type'
   | 'profile-setup'
@@ -41,7 +43,18 @@ export type Page =
   | 'settings';
 
 function App() {
-  return <RouterProvider router={router} />;
+  const app = <RouterProvider router={router} />;
+  const googleClientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+
+  if (!googleClientId) {
+    return app;
+  }
+
+  return (
+    <GoogleOAuthProvider clientId={googleClientId}>
+      {app}
+    </GoogleOAuthProvider>
+  );
 }
 
 export default App;

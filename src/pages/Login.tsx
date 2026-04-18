@@ -4,14 +4,16 @@ import { AuthCard } from "../components/auth/AuthCard";
 import { Input } from "../components/ui/input";
 import { Button } from "../components/ui/AuthButton";
 import { Divider } from "../components/ui/divider";
+import { GoogleAuthButton } from "../components/auth/GoogleAuthButton";
 import { useAuth } from "../contexts";
+import { saveTwoFactorChallenge } from "./TwoFactorVerification";
 
 interface LoginProps {
   onNavigate: (page: string) => void;
 }
 
 export const Login = ({ onNavigate }: LoginProps) => {
-  const { login, isLoading, error, clearError } = useAuth();
+  const { login, loginWithGoogle, isLoading, error, clearError } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [localError, setLocalError] = useState("");
@@ -35,6 +37,21 @@ export const Login = ({ onNavigate }: LoginProps) => {
     }
   };
 
+  const handleGoogleCredential = async (credential: string) => {
+    setLocalError("");
+    clearError();
+
+    const result = await loginWithGoogle(credential);
+
+    if ("requiresTwoFactor" in result) {
+      saveTwoFactorChallenge(result);
+      onNavigate("two-factor");
+      return;
+    }
+
+    onNavigate("my-events");
+  };
+
   const displayError = localError || error;
 
   return (
@@ -49,9 +66,11 @@ export const Login = ({ onNavigate }: LoginProps) => {
         }}
       >
         <div className="flex flex-col gap-6">
-          <Button variant="google" onClick={() => console.log("Google Login")}>
-            Sign up with Google
-          </Button>
+          <GoogleAuthButton
+            disabled={isLoading}
+            onCredential={handleGoogleCredential}
+            onError={setLocalError}
+          />
 
           <Divider text="Or Continue with" />
 

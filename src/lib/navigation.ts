@@ -10,6 +10,7 @@ import { getCurrentEventId } from './event-storage';
 export type LegacyPage =
   | 'login'
   | 'signup'
+  | 'two-factor'
   | 'verification'
   | 'account-type'
   | 'profile-setup'
@@ -48,6 +49,7 @@ function getRoutePath(page: LegacyPage, eventId?: string): string {
     // Auth routes
     'login': '/login',
     'signup': '/signup',
+    'two-factor': '/two-factor',
     'verification': '/verify-email',
     'account-type': '/account-type',
     'profile-setup': '/profile-setup',

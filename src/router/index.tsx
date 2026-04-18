@@ -10,6 +10,7 @@ import { RequireAuth, RequireTenant, RedirectIfAuth } from '../components/auth/A
 // Auth Pages
 import { Login } from '../pages/Login';
 import { SignUp } from '../pages/SignUp';
+import { TwoFactorVerification } from '../pages/TwoFactorVerification';
 import { EmailVerification } from '../pages/EmailVerification';
 import { ProfileSetup } from '../pages/ProfileSetup';
 import { ForgotPassword } from '../pages/ForgotPassword';
@@ -85,6 +86,7 @@ export const router = createBrowserRouter([
       // ── Auth Routes ─────
       { path: '/login', element: <RedirectIfAuth><WithNav Component={Login} /></RedirectIfAuth> },
       { path: '/signup', element: <RedirectIfAuth><WithNav Component={SignUp} /></RedirectIfAuth> },
+      { path: '/two-factor', element: <RedirectIfAuth><WithNav Component={TwoFactorVerification} /></RedirectIfAuth> },
       { path: '/verify-email', element: <WithNav Component={EmailVerification} /> },
       { path: '/account-type', element: <RequireAuth><WithNav Component={AccountType} /></RequireAuth> },
       { path: '/profile-setup', element: <RequireAuth><WithNav Component={ProfileSetup} /></RequireAuth> },

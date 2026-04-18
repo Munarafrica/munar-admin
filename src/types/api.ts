@@ -112,6 +112,26 @@ export interface SignUpRequest {
   userType?: UserType;
 }
 
+export interface GoogleAuthRequest {
+  credential?: string;
+  idToken?: string;
+  userType?: UserType;
+}
+
+export interface TwoFactorResponse {
+  requiresTwoFactor: true;
+  challengeToken: string;
+  channel: 'EMAIL' | 'PHONE';
+  destination: string;
+  expiresAt: string;
+  message: string;
+}
+
+export interface TwoFactorVerifyRequest {
+  challengeToken: string;
+  code: string;
+}
+
 export interface MessageResponse {
   message: string;
 }
@@ -124,6 +144,8 @@ export interface AuthTokens {
 export interface AuthResponse extends AuthTokens {
   user: User;
 }
+
+export type GoogleAuthResponse = AuthResponse | TwoFactorResponse;
 
 export interface User {
   id: string;

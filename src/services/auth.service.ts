@@ -6,10 +6,13 @@ import {
   ApiResponse,
   AuthResponse,
   AuthTokens,
+  GoogleAuthRequest,
+  GoogleAuthResponse,
   LoginRequest,
   MessageResponse,
   MutationResponse,
   SignUpRequest,
+  TwoFactorVerifyRequest,
   User,
 } from "../types/api";
 import { delay, mockUsers } from "./mock/data";
@@ -33,6 +36,68 @@ class AuthService {
       await apiClient.post<ApiEnvelope<AuthResponse>>(
         "/auth/login",
         credentials,
+        {
+          skipAuthRefresh: true,
+        },
+      ),
+    );
+
+    this.setAuthData(response);
+    return response;
+  }
+
+  async loginWithGoogle(data: GoogleAuthRequest): Promise<GoogleAuthResponse> {
+    if (config.features.useMockData) {
+      await delay(500);
+      const user = normalizeUser({
+        ...mockUsers[0],
+        isEmailVerified: true,
+      });
+      const response: AuthResponse = {
+        user,
+        accessToken: `mock-google-access-token-${Date.now()}`,
+        refreshToken: `mock-google-refresh-token-${Date.now()}`,
+      };
+
+      this.setAuthData(response);
+      return response;
+    }
+
+    const response = unwrap(
+      await apiClient.post<ApiEnvelope<GoogleAuthResponse>>(
+        "/auth/google",
+        data,
+        {
+          skipAuthRefresh: true,
+        },
+      ),
+    );
+
+    if ("accessToken" in response) {
+      this.setAuthData(response);
+    }
+
+    return response;
+  }
+
+  async verifyTwoFactor(data: TwoFactorVerifyRequest): Promise<AuthResponse> {
+    if (config.features.useMockData) {
+      await delay(500);
+      const user = normalizeUser(mockUsers[0]);
+      const response: AuthResponse = {
+        user,
+        accessToken: `mock-2fa-access-token-${Date.now()}`,
+        refreshToken: `mock-2fa-refresh-token-${Date.now()}`,
+      };
+
+      this.setAuthData(response);
+      return response;
+    }
+
+    const response = unwrap(
+      await apiClient.post<ApiEnvelope<AuthResponse>>(
+        "/auth/2fa/verify",
+        data,
         {
           skipAuthRefresh: true,
         },
